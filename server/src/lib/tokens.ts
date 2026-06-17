@@ -29,18 +29,31 @@ function sha256(data: string): string {
   return crypto.createHash('sha256').update(data).digest('hex')
 }
 
+// In production the frontend (Netlify) and API (Render) are on different
+// sites, so the refresh cookie must be SameSite=None — and None *requires*
+// Secure. In development everything is same-site on localhost over http, where
+// Lax works and Secure must stay off (browsers reject Secure cookies on http).
+const isProd = process.env.NODE_ENV === 'production'
+
 function setRefreshCookie(res: Response, raw: string): void {
   res.cookie('ats_rt', raw, {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure:   isProd,
+    sameSite: isProd ? 'none' : 'lax',
     maxAge:   REFRESH_TTL_MS,
     path:     '/api/auth',
   })
 }
 
 export function clearRefreshCookie(res: Response): void {
-  res.clearCookie('ats_rt', { httpOnly: true, path: '/api/auth' })
+  // Attributes (sameSite/secure/path) must match the set cookie or the browser
+  // won't clear it.
+  res.clearCookie('ats_rt', {
+    httpOnly: true,
+    secure:   isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    path:     '/api/auth',
+  })
 }
 
 export async function issueRefreshToken(

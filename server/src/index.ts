@@ -22,6 +22,11 @@ const _env = validateEnv()
 const app  = express()
 const PORT = Number(_env.PORT) || 4000
 
+// Render (and most PaaS) put the app behind a reverse proxy. Trusting the first
+// proxy hop lets Express read the real client IP from X-Forwarded-For (for the
+// rate limiter) and correctly treat X-Forwarded-Proto=https as a secure conn.
+if (_env.NODE_ENV === 'production') app.set('trust proxy', 1)
+
 /* ── Security headers ────────────────────────────────────────────────── */
 app.use(
   helmet({
@@ -52,11 +57,38 @@ app.use(
 )
 
 /* ── CORS — must allow credentials for the httpOnly refresh-token cookie */
-// In development allow any localhost port (Vite may pick 5173, 5174, etc.)
-const corsOptions = {
-  origin: _env.NODE_ENV === 'development'
-    ? /^http:\/\/localhost(:\d+)?$/
-    : _env.FRONTEND_URL,
+// FRONTEND_URL may list several origins (comma-separated). Normalise each by
+// trimming whitespace and any trailing slash, since browsers send the Origin
+// header WITHOUT a trailing slash — a mismatch there is the #1 cause of CORS
+// failures behind Netlify/Render.
+const allowedOrigins = _env.FRONTEND_URL
+  .split(',')
+  .map((o) => o.trim().replace(/\/+$/, ''))
+  .filter(Boolean)
+
+// For any allowed *.netlify.app site, also permit its deploy-preview and
+// branch-deploy subdomains (e.g. deploy-preview-3--atscorps.netlify.app).
+const netlifyPreviewPatterns = allowedOrigins
+  .map((o) => /^https:\/\/([a-z0-9-]+)\.netlify\.app$/.exec(o)?.[1])
+  .filter((site): site is string => Boolean(site))
+  .map((site) => new RegExp(`^https://[a-z0-9-]+--${site}\\.netlify\\.app$`))
+
+const isOriginAllowed = (origin: string): boolean => {
+  const clean = origin.replace(/\/+$/, '')
+  // Any localhost port during development (Vite may pick 5173, 5174, …)
+  if (_env.NODE_ENV === 'development' && /^http:\/\/localhost(:\d+)?$/.test(clean)) return true
+  if (allowedOrigins.includes(clean)) return true
+  if (netlifyPreviewPatterns.some((re) => re.test(clean))) return true
+  return false
+}
+
+const corsOptions: cors.CorsOptions = {
+  origin(origin, callback) {
+    // No Origin header → same-origin, curl, or server-to-server. Allow it.
+    if (!origin) return callback(null, true)
+    if (isOriginAllowed(origin)) return callback(null, true)
+    return callback(new Error(`CORS: origin not allowed — ${origin}`))
+  },
   credentials: true,
 }
 // Handle preflight (OPTIONS) for every route — must come before route handlers

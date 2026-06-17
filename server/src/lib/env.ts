@@ -9,7 +9,8 @@ const schema = z
     DB_USER:              z.string().default('postgres'),
     DB_PASSWORD:          z.string().default('postgres'),
     PORT:                 z.string().default('4000'),
-    FRONTEND_URL:         z.string().url('Must be a valid URL').default('http://localhost:5173'),
+    // One or more allowed origins, comma-separated (e.g. "https://atscorps.netlify.app,https://www.atscorps.com")
+    FRONTEND_URL:         z.string().min(1).default('http://localhost:5173'),
     NODE_ENV:             z.enum(['development', 'production', 'test']).default('development'),
     ADMIN_EMAIL:          z.string().email('Must be a valid email').default('admin@atscorps.com'),
     ADMIN_PASSWORD:       z.string().min(8, 'Must be ≥8 chars').optional(),
