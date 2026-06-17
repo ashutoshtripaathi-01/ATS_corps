@@ -1,0 +1,4 @@
+localhost:5173/admin/login → 
+credentials 
+admin@atscorps.com 
+admin@123
