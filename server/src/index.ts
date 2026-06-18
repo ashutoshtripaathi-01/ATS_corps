@@ -73,10 +73,14 @@ const netlifyPreviewPatterns = allowedOrigins
   .filter((site): site is string => Boolean(site))
   .map((site) => new RegExp(`^https://[a-z0-9-]+--${site}\\.netlify\\.app$`))
 
+// localhost / 127.0.0.1 on any port — allowed in every environment so a local
+// frontend can be pointed at the live backend for testing. Tighten this (drop
+// the prod case) once you no longer need local-against-production testing.
+const LOCALHOST_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
+
 const isOriginAllowed = (origin: string): boolean => {
   const clean = origin.replace(/\/+$/, '')
-  // Any localhost port during development (Vite may pick 5173, 5174, …)
-  if (_env.NODE_ENV === 'development' && /^http:\/\/localhost(:\d+)?$/.test(clean)) return true
+  if (LOCALHOST_RE.test(clean)) return true
   if (allowedOrigins.includes(clean)) return true
   if (netlifyPreviewPatterns.some((re) => re.test(clean))) return true
   return false
@@ -123,13 +127,13 @@ app.use('/api/applications', applicationRoutes)
 app.use('/api/payments',     paymentRoutes)
 
 app.get('/api/health', (_req, res) =>
-  res.json({ status: 'ok', service: 'ATS Corps API', env: _env.NODE_ENV }),
+  res.json({ status: 'ok', service: 'Ex-Serviceman Jobs API', env: _env.NODE_ENV }),
 )
 
 /* ── Start ───────────────────────────────────────────────────────────── */
 async function start() {
   await initDb()
   startTokenCleanupJob()
-  app.listen(PORT, () => console.log(`✅ ATS Corps API → http://localhost:${PORT}`))
+  app.listen(PORT, () => console.log(`✅ Ex-Serviceman Jobs API → http://localhost:${PORT}`))
 }
 start().catch(console.error)
