@@ -99,6 +99,7 @@ const RANKS: Record<Force, string[]> = {
 };
 
 const POSTS = [
+  'Any',
   'Guard Unarmed',
   'Gunman',
   'Security Supervisor',
@@ -138,7 +139,7 @@ const INITIAL: FormState = {
   retirementDate: '',
   dischargeBook: null,
   policeVerification: null,
-  post: '',
+  post: 'Any',
   gunLicense: '',
   otherPost: '',
   loc1: '',
@@ -518,8 +519,7 @@ function DocumentsStep({
         </div>
         <FileUpload
           label='Police Verification Certificate'
-          required
-          hint='Upload police clearance from your home district'
+          hint='Upload police clearance from your home district (optional)'
           file={data.policeVerification}
           onChange={(f) => update('policeVerification', f)}
         />
@@ -552,7 +552,7 @@ function PostLocationStep({
             Post Applied For
           </p>
         </div>
-        <FieldLabel required>Select the post you are applying for</FieldLabel>
+        <FieldLabel>Select the post you are applying for</FieldLabel>
         <div className='grid grid-cols-2 gap-2'>
           {(POSTS as unknown as string[]).map((post) => {
             const active = data.post === post;
@@ -839,11 +839,9 @@ const update = (k: keyof FormState, v: any) => {
     if (step === 2) {
       if (!data.dischargeBook)
         e.dischargeBook = 'Please upload your Discharge Book';
-      if (!data.policeVerification)
-        e.policeVerification = 'Please upload Police Verification Certificate';
+      // Police verification is optional.
     }
     if (step === 3) {
-      if (!data.post) e.post = 'Please select a post';
       if (data.post === 'Gunman' && !data.gunLicense.trim())
         e.gunLicense = 'License number is required';
       if (data.post === 'Other' && !data.otherPost.trim())

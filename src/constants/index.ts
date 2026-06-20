@@ -1,5 +1,5 @@
 export const BRAND = {
-  name: 'ATS Corps',
+  name: 'Ex-Serviceman Jobs',
   tagline: 'Connecting Talent With Opportunity',
   colors: {
     gold: '#F7A607',

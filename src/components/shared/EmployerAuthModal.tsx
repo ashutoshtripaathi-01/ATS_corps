@@ -6,8 +6,9 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   ArrowLeft, Phone, Shield, CheckCircle, Building2,
-  ChevronRight, RefreshCw, Zap,
+  ChevronRight, RefreshCw,
 } from 'lucide-react'
+import companyLogo from '@/assets/company logo.png'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -136,9 +137,7 @@ export function EmployerAuthModal({ open, onClose, onBack, mode: initialMode }: 
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="flex items-center gap-2 flex-1">
-            <div className="w-7 h-7 rounded-lg bg-[#F7A607] flex items-center justify-center">
-              <Zap className="w-4 h-4 text-white" />
-            </div>
+            <img src={companyLogo} alt='Ex-Serviceman Jobs' className='w-7 h-7 object-contain' />
             <div>
               <p className="font-bold text-white text-sm" style={{ fontFamily: 'Plus Jakarta Sans' }}>
                 {mode === 'login' ? 'Employer Login' : 'Employer Registration'}

@@ -22,6 +22,9 @@ import { Navbar } from '@/components/shared/Navbar';
 import { RoleSelectModal } from '@/components/shared/RoleSelectModal';
 import { AnimatedCounter } from '@/components/shared/AnimatedCounter';
 import { BRAND } from '@/constants';
+import heroImage from '@/assets/cover.png';
+import heroBg from '@/assets/cover 1.png';
+import companyLogo from '@/assets/company logo.png';
 
 /* ─── Static data ────────────────────────────────────────────────────────── */
 
@@ -139,7 +142,7 @@ const WHY_EMPLOYERS = [
   {
     icon: ClipboardList,
     title: 'Recruitment Support',
-    desc: 'ATS Corps actively supports you throughout the hiring, screening, and placement process.',
+    desc: 'Ex-Serviceman Jobs actively supports you throughout the hiring, screening, and placement process.',
     bg: 'bg-green-50',
     color: 'text-green-600',
   },
@@ -166,7 +169,7 @@ const HOW_CANDIDATE = [
   {
     n: '03',
     title: 'Verification Process',
-    desc: 'ATS Corps verifies your documents and background.',
+    desc: 'Ex-Serviceman Jobs verifies your documents and background.',
   },
   {
     n: '04',
@@ -181,7 +184,7 @@ const HOW_CANDIDATE = [
   {
     n: '06',
     title: 'Placement Support',
-    desc: 'ATS Corps supports you through interview and final hiring.',
+    desc: 'Ex-Serviceman Jobs supports you through interview and final hiring.',
   },
 ];
 
@@ -199,7 +202,7 @@ const HOW_EMPLOYER = [
   {
     n: '03',
     title: 'ATS Screening',
-    desc: 'ATS Corps screens and verifies suitable candidates.',
+    desc: 'Ex-Serviceman Jobs screens and verifies suitable candidates.',
   },
   {
     n: '04',
@@ -214,7 +217,7 @@ const HOW_EMPLOYER = [
   {
     n: '06',
     title: 'Hiring Support',
-    desc: 'ATS Corps assists with onboarding and documentation.',
+    desc: 'Ex-Serviceman Jobs assists with onboarding and documentation.',
   },
 ];
 
@@ -265,7 +268,7 @@ const TESTIMONIALS = [
     placedAt: 'HPCL Assam Division',
     force: 'Army',
     quote:
-      'ATS Corps handled my verification and placement professionally. The process was smooth, transparent, and faster than I expected.',
+      'Ex-Serviceman Jobs handled my verification and placement professionally. The process was smooth, transparent, and faster than I expected.',
   },
   {
     name: 'Bikash Kalita',
@@ -274,7 +277,7 @@ const TESTIMONIALS = [
     placedAt: 'Jorhat Tea Estate',
     force: 'Para Military',
     quote:
-      'I submitted my documents and ATS Corps did the rest. Now I am employed close to home with a stable salary and good working conditions.',
+      'I submitted my documents and Ex-Serviceman Jobs did the rest. Now I am employed close to home with a stable salary and good working conditions.',
   },
   {
     name: 'Pranjal Das',
@@ -283,7 +286,7 @@ const TESTIMONIALS = [
     placedAt: 'NEEPCO Umiam',
     force: 'Army',
     quote:
-      'ATS Corps matched me to a position that fits my rank and experience. The employer already knew my background when I walked in for the interview.',
+      'Ex-Serviceman Jobs matched me to a position that fits my rank and experience. The employer already knew my background when I walked in for the interview.',
   },
 ];
 
@@ -312,13 +315,23 @@ export default function Landing() {
       {/* ══════════════════════════════════════════
           HERO
       ══════════════════════════════════════════ */}
-      <section className='relative pt-24 pb-20 overflow-hidden bg-gradient-to-br from-[#f4f6ff] via-white to-[#FFF8EC]'>
+      <section className='relative pt-28 pb-24 overflow-hidden'>
+        {/* Background image */}
+        <div
+          className='absolute inset-0 bg-cover bg-center'
+          style={{ backgroundImage: `url(${heroBg})` }}
+        />
+        {/* Layered overlays — near-solid on the left so the copy is crisp and
+            high-contrast, fading right so the photograph stays visible. */}
+        <div className='absolute inset-0 bg-gradient-to-r from-white via-white/92 to-white/60' />
+        <div className='absolute inset-0 bg-gradient-to-t from-white/85 via-transparent to-white/30' />
+
         <div className='absolute inset-0 pointer-events-none overflow-hidden'>
-          <div className='absolute -top-32 -right-32 w-96 h-96 rounded-full bg-[#F7A607]/6 blur-3xl' />
+          <div className='absolute -top-32 -right-32 w-96 h-96 rounded-full bg-[#F7A607]/10 blur-3xl' />
           <div className='absolute -bottom-16 -left-16 w-72 h-72 rounded-full bg-blue-500/5 blur-3xl' />
         </div>
 
-        <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
+        <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10'>
           <div className='grid grid-cols-1 lg:grid-cols-2 gap-14 items-center'>
             {/* Left — Copy */}
             <motion.div
@@ -326,8 +339,8 @@ export default function Landing() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.55 }}
             >
-              <div className='inline-flex items-center gap-2 bg-[#292e31]/8 rounded-full px-4 py-1.5 mb-6'>
-                <Shield className='w-4 h-4 text-[#292e31]' />
+              <div className='inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-4 py-1.5 mb-6 shadow-sm ring-1 ring-gray-200'>
+                <Shield className='w-4 h-4 text-[#F7A607]' />
                 <span className='text-sm font-semibold text-[#292e31]'>
                   Workforce Recruitment &amp; Staffing Partner · Assam &amp;
                   Northeast India
@@ -343,7 +356,7 @@ export default function Landing() {
               >
                 Connecting{' '}
                 <span className='text-[#F7A607] relative'>
-                  Verified Workforce
+                  Ex-Serviceman Workforce
                   <svg
                     className='absolute -bottom-1 left-0 w-full'
                     height='6'
@@ -362,19 +375,12 @@ export default function Landing() {
                 With Trusted Employers
               </h1>
 
-              <p className='text-lg text-gray-600 mb-8 leading-relaxed max-w-lg'>
-                ATS Corps verifies, screens, and places qualified candidates for
-                organizations across Assam and Northeast India. From
-                ex-servicemen to skilled professionals, we simplify workforce
-                recruitment.
-              </p>
-
               <div className='flex flex-wrap gap-3 mb-8'>
                 <Button
                   size='xl'
                   variant='dark'
                   onClick={() => openAuth('register')}
-                  className='gap-2 rounded-xl'
+                  className='group gap-2 rounded-xl'
                 >
                   Find Employment
                   <ArrowRight className='w-5 h-5 transition-transform group-hover:translate-x-1' />
@@ -383,20 +389,23 @@ export default function Landing() {
                   size='xl'
                   variant='outline'
                   onClick={() => openAuth('register')}
-                  className='gap-2 rounded-xl border-gray-300 hover:border-[#F7A607] hover:text-[#F7A607]'
+                  className='gap-2 rounded-xl bg-white/95 border-gray-300 text-[#292e31] hover:bg-[#F7A607] hover:text-white hover:border-[#F7A607]'
                 >
                   Hire Talent
                   <Building2 className='w-5 h-5' />
                 </Button>
               </div>
 
-              <div className='flex flex-wrap items-center gap-5 text-sm text-gray-500'>
+              <div className='flex flex-wrap items-center gap-3'>
                 {[
                   { icon: CheckCircle, text: 'Verified candidate profiles' },
                   { icon: Shield, text: 'Background screened' },
                   { icon: MapPin, text: 'All of Assam & NE India' },
                 ].map(({ icon: Icon, text }) => (
-                  <span key={text} className='flex items-center gap-1.5'>
+                  <span
+                    key={text}
+                    className='flex items-center gap-1.5 text-sm font-medium text-[#292e31] bg-white/85 backdrop-blur-sm rounded-full px-3 py-1.5 shadow-sm ring-1 ring-gray-200'
+                  >
                     <Icon className='w-4 h-4 text-[#F7A607]' />
                     {text}
                   </span>
@@ -404,156 +413,29 @@ export default function Landing() {
               </div>
             </motion.div>
 
-            {/* Right — Dashboard mockup */}
+            {/* Right — Hero image */}
             <motion.div
               initial={{ opacity: 0, x: 36 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.65, delay: 0.18 }}
               className='relative hidden lg:block'
             >
-              {/* Main card */}
-              <div className='bg-white rounded-3xl shadow-2xl border border-gray-100 p-6 relative z-10'>
-                {/* Browser chrome */}
-                <div className='flex items-center gap-3 mb-5'>
-                  <div className='flex gap-1.5'>
-                    <div className='w-3 h-3 rounded-full bg-red-400' />
-                    <div className='w-3 h-3 rounded-full bg-yellow-400' />
-                    <div className='w-3 h-3 rounded-full bg-green-400' />
-                  </div>
-                  <div className='flex-1 bg-gray-100 rounded-full h-6 flex items-center px-3'>
-                    <span className='text-xs text-gray-500'>
-                      atscorps.in/dashboard
-                    </span>
-                  </div>
-                </div>
-
-                {/* Candidate profile */}
-                <div className='flex items-center gap-3 p-3 bg-[#F7A607]/8 rounded-2xl mb-4'>
-                  <div className='w-11 h-11 rounded-full bg-[#292e31] flex items-center justify-center text-[#F7A607] font-extrabold text-sm shrink-0'>
-                    RB
-                  </div>
-                  <div className='flex-1 min-w-0'>
-                    <div className='flex items-center gap-2'>
-                      <p className='font-bold text-sm text-gray-900'>
-                        Ranjit Borah
-                      </p>
-                      <span className='inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700'>
-                        <CheckCircle className='w-2.5 h-2.5' />
-                        Verified
-                      </span>
-                    </div>
-                    <p className='text-xs text-gray-500'>
-                      Ex-Army, Havildar · Guwahati &amp; Around
-                    </p>
-                  </div>
-                  <span className='text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 shrink-0'>
-                    Active
-                  </span>
-                </div>
-
-                {/* ATS Corps status indicators */}
-                <div className='grid grid-cols-3 gap-2 mb-4'>
-                  {[
-                    {
-                      label: 'Profile Verified',
-                      value: '✓',
-                      bg: 'bg-green-50',
-                      text: 'text-green-600',
-                    },
-                    {
-                      label: 'Background Check',
-                      value: '✓',
-                      bg: 'bg-blue-50',
-                      text: 'text-blue-600',
-                    },
-                    {
-                      label: 'Employer Matches',
-                      value: '3',
-                      bg: 'bg-[#F7A607]/10',
-                      text: 'text-[#F7A607]',
-                    },
-                  ].map((s) => (
-                    <div
-                      key={s.label}
-                      className={`${s.bg} rounded-xl p-3 text-center`}
-                    >
-                      <p className={`text-base font-extrabold ${s.text}`}>
-                        {s.value}
-                      </p>
-                      <p className='text-[10px] text-gray-500 mt-0.5 leading-tight'>
-                        {s.label}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Job match */}
-                <div className='border border-gray-100 rounded-xl p-3.5'>
-                  <div className='flex items-start gap-3'>
-                    <div className='w-9 h-9 rounded-lg bg-[#292e31] flex items-center justify-center shrink-0'>
-                      <Briefcase className='w-4 h-4 text-[#F7A607]' />
-                    </div>
-                    <div className='flex-1 min-w-0'>
-                      <p className='text-sm font-semibold text-gray-900'>
-                        Security Guard Supervisor
-                      </p>
-                      <p className='text-xs text-gray-500'>
-                        HPCL Assam Division · Guwahati &amp; Around
-                      </p>
-                      <div className='flex items-center gap-2 mt-1.5 flex-wrap'>
-                        <span className='text-xs font-semibold text-[#F7A607] flex items-center gap-0.5'>
-                          <IndianRupee className='w-3 h-3' />
-                          20,000 – 25,000 /mo
-                        </span>
-                        <span className='text-[10px] font-semibold text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full'>
-                          ATS Verified ✓
-                        </span>
-                        <span className='text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full'>
-                          Placement Support
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+              {/* Square crop (matches reference ratio), reduced size, with the
+                  green caption bar overlaid at the bottom. */}
+              <div className='relative mx-auto w-full max-w-md aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl ring-1 ring-black/10'>
+                <img
+                  src={heroImage}
+                  alt='Modern day soldier handling advanced weapon and communication systems'
+                  className='w-full h-full object-cover object-top'
+                />
+                {/* Green caption bar */}
+                <div className='absolute inset-x-0 bottom-0 bg-[#5f7355]/95 px-5 py-3'>
+                  <p className='text-center text-white text-sm font-medium leading-snug tracking-wide'>
+                    Modern day soldier is handling Technologically Advanced
+                    Weapon, Radar &amp; Communication Systems and is tech savvy!
+                  </p>
                 </div>
               </div>
-
-              {/* Floating: profile verified */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.9, duration: 0.45 }}
-                className='absolute -bottom-5 -left-8 bg-white rounded-2xl shadow-xl border border-gray-100 p-3.5 flex items-center gap-3 z-20'
-              >
-                <div className='w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0'>
-                  <UserCheck className='w-5 h-5 text-green-500' />
-                </div>
-                <div>
-                  <p className='text-xs font-bold text-gray-900'>
-                    Profile Verified
-                  </p>
-                  <p className='text-[11px] text-gray-500'>by ATS Corps Team</p>
-                </div>
-              </motion.div>
-
-              {/* Floating: new match */}
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1.15, duration: 0.45 }}
-                className='absolute -top-5 -right-6 bg-[#292e31] text-white rounded-2xl shadow-xl p-3.5 flex items-center gap-3 z-20'
-              >
-                <div className='w-8 h-8 rounded-full bg-[#F7A607]/20 flex items-center justify-center shrink-0'>
-                  <Zap className='w-4 h-4 text-[#F7A607]' />
-                </div>
-                <div>
-                  <p className='text-[11px] font-bold text-white'>
-                    New Employer Match!
-                  </p>
-                  <p className='text-[10px] text-gray-400'>
-                    NEEPCO · Armed Guard
-                  </p>
-                </div>
-              </motion.div>
             </motion.div>
           </div>
         </div>
@@ -602,7 +484,7 @@ export default function Landing() {
       </section>
 
       {/* ══════════════════════════════════════════
-          HOW ATS CORPS SUPPORTS RECRUITMENT
+          HOW Ex-Serviceman Jobs SUPPORTS RECRUITMENT
       ══════════════════════════════════════════ */}
       <section className='py-20 bg-white'>
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
@@ -617,12 +499,12 @@ export default function Landing() {
               className='text-4xl font-extrabold text-gray-900 mb-4'
               style={{ fontFamily: 'Plus Jakarta Sans' }}
             >
-              How ATS Corps Supports Recruitment
+              How Ex-Serviceman Jobs Supports Recruitment
             </h2>
             <p className='text-gray-500 text-lg max-w-2xl mx-auto leading-relaxed'>
-              ATS Corps manages candidate verification, workforce matching,
-              employer requirements, and placement coordination to ensure
-              successful hiring outcomes.
+              Ex-Serviceman Jobs manages candidate verification, workforce
+              matching, employer requirements, and placement coordination to
+              ensure successful hiring outcomes.
             </p>
           </div>
 
@@ -650,7 +532,7 @@ export default function Landing() {
               </p>
             </motion.div>
 
-            {/* Arrow + ATS Corps */}
+            {/* Arrow + Ex-Serviceman Jobs */}
             <div className='flex flex-col md:flex-row items-center gap-0 md:gap-0'>
               <motion.div
                 initial={{ scaleX: 0 }}
@@ -669,14 +551,16 @@ export default function Landing() {
                 className='relative mx-4'
               >
                 <div className='bg-[#292e31] rounded-2xl p-5 text-center shadow-2xl shadow-[#292e31]/20 relative z-10 w-56'>
-                  <div className='w-12 h-12 rounded-xl bg-[#F7A607] flex items-center justify-center mx-auto mb-3 shadow-lg shadow-[#F7A607]/30'>
-                    <Zap className='w-6 h-6 text-white' />
-                  </div>
+                  <img
+                    src={companyLogo}
+                    alt='Ex-Serviceman Jobs'
+                    className='w-12 h-12 object-contain mx-auto mb-3'
+                  />
                   <p
                     className='font-extrabold text-white text-base mb-1'
                     style={{ fontFamily: 'Plus Jakarta Sans' }}
                   >
-                    ATS Corps
+                    Ex-Serviceman Jobs
                   </p>
                   <p className='text-xs text-gray-400 leading-snug'>
                     Verification · Screening · Matching · Placement
@@ -717,7 +601,7 @@ export default function Landing() {
                 Candidate
               </p>
               <p className='text-xs text-gray-500 leading-snug'>
-                Verified, matched, and placed by ATS Corps
+                Verified, matched, and placed by Ex-Serviceman Jobs
               </p>
             </motion.div>
           </div>
@@ -735,14 +619,14 @@ export default function Landing() {
               {
                 icon: Zap,
                 title: 'Workforce Matching',
-                desc: 'ATS Corps matches candidate skills, experience, and location preference against employer requirements.',
+                desc: 'Ex-Serviceman Jobs matches candidate skills, experience, and location preference against employer requirements.',
                 bg: 'bg-[#F7A607]/10',
                 color: 'text-[#F7A607]',
               },
               {
                 icon: CheckCircle,
                 title: 'End-to-End Placement',
-                desc: 'From registration to final hire, ATS Corps manages the complete recruitment workflow for both parties.',
+                desc: 'From registration to final hire, Ex-Serviceman Jobs manages the complete recruitment workflow for both parties.',
                 bg: 'bg-green-50',
                 color: 'text-green-600',
               },
@@ -774,7 +658,7 @@ export default function Landing() {
       </section>
 
       {/* ══════════════════════════════════════════
-          WHY EMPLOYERS CHOOSE ATS CORPS
+          WHY EMPLOYERS CHOOSE Ex-Serviceman Jobs
       ══════════════════════════════════════════ */}
       <section className='py-20 bg-[#f8f9fc]'>
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
@@ -789,7 +673,7 @@ export default function Landing() {
               className='text-4xl font-extrabold text-gray-900 mb-3'
               style={{ fontFamily: 'Plus Jakarta Sans' }}
             >
-              Why Employers Choose ATS Corps
+              Why Employers Choose Ex-Serviceman Jobs
             </h2>
             <p className='text-gray-500 text-lg max-w-xl mx-auto'>
               We take the complexity out of workforce recruitment and deliver
@@ -838,8 +722,8 @@ export default function Landing() {
               Who We Serve
             </h2>
             <p className='text-gray-500 text-lg max-w-xl mx-auto'>
-              ATS Corps connects a wide range of workforce professionals with
-              employers across Assam and Northeast India.
+              Ex-Serviceman Jobs connects a wide range of workforce
+              professionals with employers across Assam and Northeast India.
             </p>
           </div>
 
@@ -895,7 +779,7 @@ export default function Landing() {
               className='text-4xl font-extrabold text-gray-900 mb-3'
               style={{ fontFamily: 'Plus Jakarta Sans' }}
             >
-              How ATS Corps Works
+              How Ex-Serviceman Jobs Works
             </h2>
             <p className='text-gray-500 text-base'>
               A structured, transparent process for both candidates and
@@ -1059,7 +943,7 @@ export default function Landing() {
               className='text-4xl font-extrabold text-gray-900 mb-3'
               style={{ fontFamily: 'Plus Jakarta Sans' }}
             >
-              Successful Placements by ATS Corps
+              Successful Placements by Ex-Serviceman Jobs
             </h2>
             <p className='text-gray-500 text-base'>
               Real candidates. Verified profiles. Trusted employers.
@@ -1159,13 +1043,13 @@ export default function Landing() {
               </h3>
               <p className='text-sm text-blue-200 leading-relaxed mb-6'>
                 Register your profile and connect with verified employers across
-                Assam. ATS Corps handles your verification and placement from
-                start to finish.
+                Assam. Ex-Serviceman Jobs handles your verification and
+                placement from start to finish.
               </p>
               <ul className='space-y-2 mb-7'>
                 {[
                   'Register once, get matched to multiple employers',
-                  'ATS Corps verifies your profile and documents',
+                  'Ex-Serviceman Jobs verifies your profile and documents',
                   'Location-based placement across Assam & NE India',
                 ].map((f) => (
                   <li
@@ -1209,14 +1093,14 @@ export default function Landing() {
                 Workforce
               </h3>
               <p className='text-sm text-gray-400 leading-relaxed mb-6'>
-                Register your organization on ATS Corps and access a verified,
-                screened pool of candidates ready for deployment.
+                Register your organization on Ex-Serviceman Jobs and access a
+                verified, screened pool of candidates ready for deployment.
               </p>
               <ul className='space-y-2 mb-7'>
                 {[
                   'Access pre-verified, background-checked candidates',
                   'Post workforce requirements and receive shortlists',
-                  'ATS Corps manages screening and placement support',
+                  'Ex-Serviceman Jobs manages screening and placement support',
                 ].map((f) => (
                   <li
                     key={f}
@@ -1260,9 +1144,11 @@ export default function Landing() {
           <div className='grid grid-cols-2 md:grid-cols-4 gap-8 mb-10'>
             <div className='col-span-2 md:col-span-1'>
               <div className='flex items-center gap-2 mb-4'>
-                <div className='w-9 h-9 rounded-xl bg-[#F7A607] flex items-center justify-center shadow-lg shadow-[#F7A607]/20'>
-                  <Zap className='w-5 h-5 text-white' />
-                </div>
+                <img
+                  src={companyLogo}
+                  alt='Ex-Serviceman Jobs'
+                  className='w-9 h-9 object-contain'
+                />
                 <span
                   className='font-extrabold text-xl text-white'
                   style={{ fontFamily: 'Plus Jakarta Sans' }}
@@ -1303,7 +1189,7 @@ export default function Landing() {
               {
                 title: 'Company',
                 links: [
-                  'About ATS Corps',
+                  'About Ex-Serviceman Jobs',
                   'Our Partners',
                   'Contact Us',
                   'Privacy Policy',

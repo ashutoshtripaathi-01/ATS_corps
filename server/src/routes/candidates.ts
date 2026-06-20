@@ -11,6 +11,7 @@ import { requireAuth } from '../middleware/auth'
 import { body, mobile as mobileSchema, otp as otpSchema } from '../lib/validate'
 import { audit, A } from '../lib/audit'
 import { verifySignature } from '../lib/razorpay'
+import { isSmsEnabled, sendOtpSms } from '../lib/msg91'
 import { env } from '../lib/env'
 
 const router = Router()
@@ -83,14 +84,28 @@ const verifyOtpSchema = z.object({ mobile: mobileSchema, otp: otpSchema })
 /* ── POST /send-otp ─────────────────────────────────────────────────── */
 router.post('/send-otp', otpLimiter, body(sendOtpSchema), async (req: Request, res: Response) => {
   const { mobile } = req.body as z.infer<typeof sendOtpSchema>
-  const otp        = '123456' // TODO: replace with real SMS OTP
-  const expires    = new Date(Date.now() + 10 * 60 * 1000)
+  // Cryptographically-secure 6-digit code (100000–999999).
+  const otp     = String(crypto.randomInt(100_000, 1_000_000))
+  const expires = new Date(Date.now() + 10 * 60 * 1000)
 
   await pool.query(
     'INSERT INTO otps (mobile, otp_code, expires_at) VALUES ($1,$2,$3)',
     [mobile, otp, expires],
   )
-  console.log(`[OTP] ${mobile} → ${otp}`)
+
+  // Deliver via MSG91 when configured; otherwise fall back to demo mode.
+  if (isSmsEnabled()) {
+    try {
+      await sendOtpSms(mobile, otp)
+    } catch (e: any) {
+      console.error('[OTP] MSG91 send failed:', e.message)
+      return res.status(502).json({ error: 'Could not send OTP. Please try again.' })
+    }
+    return res.json({ success: true })
+  }
+
+  // Dev/demo fallback — never leak the OTP once SMS is live.
+  console.log(`[OTP] ${mobile} → ${otp} (SMS disabled — demo mode)`)
   return res.json({ success: true, demo_otp: otp })
 })
 

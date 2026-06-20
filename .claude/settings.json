@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(node -e \"const l=require\\('./package-lock.json'\\); const t=l.packages['']?.dependencies?.tsx; console.log\\('tsx in prod deps:', t ? 'YES \\('+t+'\\)' : 'NO'\\)\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git rm *)",
+      "WebFetch(domain:gharkamai.com)",
+      "WebFetch(domain:gharkamali.com)"
     ]
   }
 }

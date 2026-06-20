@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Zap, ChevronRight, Check } from 'lucide-react';
+import { X, ChevronRight, Check } from 'lucide-react';
+import companyLogo from '@/assets/company logo.png';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { CandidateAuthModal } from './CandidateAuthModal';
 import { EmployerAuthModal } from './EmployerAuthModal';
@@ -418,7 +419,7 @@ const CARDS = [
     tag: 'For Employers',
     title: 'Hire Qualified\nTalent',
     description:
-      'Access verified candidate profiles and manage your hiring process through ATS Corps.',
+      'Access verified candidate profiles and manage your hiring process through Ex-Serviceman Jobs.',
     features: [
       'Post job vacancies',
       'Access verified candidates',
@@ -450,9 +451,7 @@ export function RoleSelectModal({
             {/* Top bar */}
             <div className='flex items-center justify-between mb-4'>
               <div className='flex items-center gap-2.5'>
-                <div className='w-9 h-9 rounded-xl bg-[#292e31] flex items-center justify-center shadow-sm'>
-                  <Zap className='w-5 h-5 text-[#F7A607]' />
-                </div>
+                <img src={companyLogo} alt='Ex-Serviceman Jobs' className='w-9 h-9 object-contain' />
                 <span
                   className='font-extrabold text-gray-900 text-base'
                   style={{ fontFamily: 'Plus Jakarta Sans' }}
@@ -532,7 +531,9 @@ export function RoleSelectModal({
                         <div className='absolute bottom-0 left-[10%] right-[10%] h-px bg-white/12 sm:hidden' />
                         {/* vertical separator — desktop only */}
                         <div className='hidden sm:block absolute inset-y-[18%] right-0 w-px bg-white/12' />
-                        <div className='w-[96px] sm:w-[98px]'>{illustration}</div>
+                        <div className='w-[96px] sm:w-[98px]'>
+                          {illustration}
+                        </div>
                       </div>
 
                       {/* Content */}

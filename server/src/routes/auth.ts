@@ -107,7 +107,7 @@ router.post(
 
       return res.json({
         accessToken,
-        user: { id: 'admin-1', name: 'ATS Corps Admin', email, role: 'admin' },
+        user: { id: 'admin-1', name: 'Ex-Serviceman Jobs Admin', email, role: 'admin' },
       })
     } catch (e: any) {
       console.error('[auth/admin/login]', e)

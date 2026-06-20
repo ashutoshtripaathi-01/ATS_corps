@@ -1,6 +1,6 @@
-# ATS Corps — Security Architecture
+# Ex-Serviceman Jobs — Security Architecture
 
-This document describes the security architecture of the ATS Corps recruitment platform.
+This document describes the security architecture of the Ex-Serviceman Jobs recruitment platform.
 
 ---
 
@@ -8,10 +8,10 @@ This document describes the security architecture of the ATS Corps recruitment p
 
 The platform uses a **dual-token** authentication system:
 
-| Token          | Lifetime | Storage           | Transport               |
-|----------------|----------|-------------------|-------------------------|
-| Access token   | 15 min   | JS memory only    | `Authorization: Bearer` |
-| Refresh token  | 7 days   | httpOnly cookie   | Cookie (auto)           |
+| Token         | Lifetime | Storage         | Transport               |
+| ------------- | -------- | --------------- | ----------------------- |
+| Access token  | 15 min   | JS memory only  | `Authorization: Bearer` |
+| Refresh token | 7 days   | httpOnly cookie | Cookie (auto)           |
 
 ### Why two tokens?
 
@@ -101,6 +101,7 @@ headers, making these endpoints immune to CSRF by design.
 **Why no explicit CSRF token?**
 
 An explicit double-submit CSRF cookie is only useful when:
+
 1. Cookies use `SameSite=None` (ours use `Strict`), AND
 2. The API accepts form-encoded bodies without a Bearer token
 
@@ -111,9 +112,9 @@ additional security benefit for this architecture.
 
 ## 6. Cookie Strategy
 
-| Cookie      | httpOnly | secure (prod) | SameSite | Path       | Lifetime |
-|-------------|----------|---------------|----------|------------|----------|
-| `ats_rt`    | ✓        | ✓             | Strict   | `/api/auth`| 7 days   |
+| Cookie   | httpOnly | secure (prod) | SameSite | Path        | Lifetime |
+| -------- | -------- | ------------- | -------- | ----------- | -------- |
+| `ats_rt` | ✓        | ✓             | Strict   | `/api/auth` | 7 days   |
 
 - `httpOnly: true` — JavaScript cannot access the cookie (prevents XSS exfiltration)
 - `secure: true` in production — cookie only sent over HTTPS
@@ -126,11 +127,11 @@ additional security benefit for this architecture.
 
 Three layers of rate limiting:
 
-| Layer              | Limit           | Applied to                          |
-|--------------------|-----------------|-------------------------------------|
-| Global             | 300 req/15 min  | All routes                          |
-| OTP endpoints      | 5 req/15 min    | `/send-otp`, `/verify-otp`          |
-| Auth/login         | 5 req/15 min    | `/api/auth/admin/login`             |
+| Layer         | Limit          | Applied to                 |
+| ------------- | -------------- | -------------------------- |
+| Global        | 300 req/15 min | All routes                 |
+| OTP endpoints | 5 req/15 min   | `/send-otp`, `/verify-otp` |
+| Auth/login    | 5 req/15 min   | `/api/auth/admin/login`    |
 
 The auth rate limiter uses `skipSuccessfulRequests: true` — only failed attempts
 count against the limit, so a legitimate user is not locked out by their own traffic.
@@ -158,20 +159,20 @@ For multi-instance production deployments, replace the in-memory store
 
 All security-relevant events are written to the `audit_logs` table:
 
-| Action                    | When                                        |
-|---------------------------|---------------------------------------------|
-| `LOGIN_SUCCESS`           | Successful admin or candidate login         |
-| `LOGIN_FAILED`            | Wrong credentials (with reason)             |
-| `ACCOUNT_LOCKED`          | Lockout triggered                           |
-| `LOGOUT`                  | Explicit logout                             |
-| `REFRESH_TOKEN_ROTATED`   | Successful refresh                          |
-| `TOKEN_REUSE_DETECTED`    | Stolen/reused refresh token presented       |
-| `CANDIDATE_REGISTERED`    | New or updated candidate registration       |
-| `EMPLOYER_REGISTERED`     | New or updated employer registration        |
-| `JOB_POSTED`              | New job listing created                     |
-| `JOB_DELETED`             | Job listing removed                         |
-| `APPLICATION_SUBMITTED`   | Candidate applies to a job                  |
-| `APPLICATION_STATUS_CHANGED` | Employer updates application status      |
+| Action                       | When                                  |
+| ---------------------------- | ------------------------------------- |
+| `LOGIN_SUCCESS`              | Successful admin or candidate login   |
+| `LOGIN_FAILED`               | Wrong credentials (with reason)       |
+| `ACCOUNT_LOCKED`             | Lockout triggered                     |
+| `LOGOUT`                     | Explicit logout                       |
+| `REFRESH_TOKEN_ROTATED`      | Successful refresh                    |
+| `TOKEN_REUSE_DETECTED`       | Stolen/reused refresh token presented |
+| `CANDIDATE_REGISTERED`       | New or updated candidate registration |
+| `EMPLOYER_REGISTERED`        | New or updated employer registration  |
+| `JOB_POSTED`                 | New job listing created               |
+| `JOB_DELETED`                | Job listing removed                   |
+| `APPLICATION_SUBMITTED`      | Candidate applies to a job            |
+| `APPLICATION_STATUS_CHANGED` | Employer updates application status   |
 
 Each log record includes: `user_id`, `action`, `ip_address`, `user_agent`,
 `metadata` (JSON), `created_at`.
@@ -193,6 +194,7 @@ Admin passwords are stored as **bcrypt hashes** (12 rounds).
   remove `ADMIN_PASSWORD`.
 
 **Recommended production setup:**
+
 ```
 ADMIN_EMAIL=admin@atscorps.com
 ADMIN_PASSWORD_HASH=$2b$12$...     # bcrypt hash, 12 rounds
@@ -205,13 +207,13 @@ ADMIN_PASSWORD_HASH=$2b$12$...     # bcrypt hash, 12 rounds
 
 Candidate document uploads enforce:
 
-| Control              | Detail                                              |
-|----------------------|-----------------------------------------------------|
-| Allowed MIME types   | `image/jpeg`, `image/png`, `application/pdf`, DOC, DOCX |
-| Allowed extensions   | `.jpg`, `.jpeg`, `.png`, `.pdf`, `.doc`, `.docx`   |
-| Blocked extensions   | `.exe`, `.bat`, `.sh`, `.js`, `.php`, `.py`, and 10+ more |
-| Max file size        | 10 MB (multer enforced before file is written)      |
-| Safe filename        | `crypto.randomUUID() + safeExt` — original name discarded |
+| Control            | Detail                                                    |
+| ------------------ | --------------------------------------------------------- |
+| Allowed MIME types | `image/jpeg`, `image/png`, `application/pdf`, DOC, DOCX   |
+| Allowed extensions | `.jpg`, `.jpeg`, `.png`, `.pdf`, `.doc`, `.docx`          |
+| Blocked extensions | `.exe`, `.bat`, `.sh`, `.js`, `.php`, `.py`, and 10+ more |
+| Max file size      | 10 MB (multer enforced before file is written)            |
+| Safe filename      | `crypto.randomUUID() + safeExt` — original name discarded |
 
 File names are generated using `crypto.randomUUID()`, so the original filename
 never reaches the filesystem (prevents path traversal and naming attacks).
@@ -225,6 +227,7 @@ never reaches the filesystem (prevents path traversal and naming attacks).
 Three roles exist: `candidate`, `employer`, `admin`.
 
 The `requireAuth(...roles)` middleware:
+
 1. Validates the `Authorization: Bearer <token>` header
 2. Verifies JWT signature and expiry
 3. Checks the token's `role` is in the allowed list
@@ -234,16 +237,16 @@ The `requireAuth(...roles)` middleware:
 
 Beyond RBAC, every sensitive route performs an **ownership check**:
 
-| Route                                 | Check                                     |
-|---------------------------------------|-------------------------------------------|
-| `GET /api/candidates/:id`             | Candidate ID must match `req.auth.id`     |
-| `GET /api/employers/:id`              | Employer ID must match `req.auth.id`      |
-| `PATCH /api/employers/:id`            | Employer ID must match `req.auth.id`      |
-| `GET /api/jobs/employer/:id`          | Employer ID must match `req.auth.id`      |
-| `PATCH /api/jobs/:id/status`          | `employer_id` on job must match token     |
-| `DELETE /api/jobs/:id`                | `employer_id` on job must match token     |
-| `GET /api/applications/candidate/:id` | Candidate ID must match `req.auth.id`     |
-| `GET /api/applications/employer/:id`  | Employer ID must match `req.auth.id`      |
+| Route                                 | Check                                 |
+| ------------------------------------- | ------------------------------------- |
+| `GET /api/candidates/:id`             | Candidate ID must match `req.auth.id` |
+| `GET /api/employers/:id`              | Employer ID must match `req.auth.id`  |
+| `PATCH /api/employers/:id`            | Employer ID must match `req.auth.id`  |
+| `GET /api/jobs/employer/:id`          | Employer ID must match `req.auth.id`  |
+| `PATCH /api/jobs/:id/status`          | `employer_id` on job must match token |
+| `DELETE /api/jobs/:id`                | `employer_id` on job must match token |
+| `GET /api/applications/candidate/:id` | Candidate ID must match `req.auth.id` |
+| `GET /api/applications/employer/:id`  | Employer ID must match `req.auth.id`  |
 
 Ownership violations return **HTTP 403 Forbidden**.
 Admins bypass ownership checks for all routes.
@@ -256,10 +259,13 @@ All database queries use **parameterized queries** (`$1`, `$2`, ...) via the `pg
 library. No user input is ever interpolated into SQL strings.
 
 The only dynamic SQL is the WHERE-clause builder in `GET /api/jobs`:
+
 ```typescript
-where.push(`j.status = $${params.push(status || 'active')}`)
+where.push(`j.status = $${params.push(status || 'active')}`);
 ```
+
 This is safe because:
+
 - The SQL **structure** (column names, operators) is hardcoded
 - The SQL **values** go into the `params` array and are passed as `$N` placeholders
 - `Array.push()` returns the new length, which is used as the placeholder index
@@ -287,7 +293,10 @@ field-level error details:
 {
   "error": "Validation failed",
   "details": [
-    { "field": "mobile", "message": "Enter a valid 10-digit Indian mobile number" }
+    {
+      "field": "mobile",
+      "message": "Enter a valid 10-digit Indian mobile number"
+    }
   ]
 }
 ```
@@ -298,15 +307,15 @@ Server-side validation is authoritative — frontend validation is UX only.
 
 ## 16. HTTP Security Headers (Helmet)
 
-| Header                            | Value                     |
-|-----------------------------------|---------------------------|
-| `Content-Security-Policy`         | `default-src 'self'`; no scripts/styles/frames |
-| `X-Content-Type-Options`          | `nosniff`                 |
-| `X-Frame-Options`                 | `DENY`                    |
-| `X-XSS-Protection`                | `0` (modern browsers use CSP) |
-| `Referrer-Policy`                 | `no-referrer`             |
-| `Strict-Transport-Security`       | 1 year (production only)  |
-| `Cross-Origin-Resource-Policy`    | `cross-origin` (for uploads) |
+| Header                         | Value                                          |
+| ------------------------------ | ---------------------------------------------- |
+| `Content-Security-Policy`      | `default-src 'self'`; no scripts/styles/frames |
+| `X-Content-Type-Options`       | `nosniff`                                      |
+| `X-Frame-Options`              | `DENY`                                         |
+| `X-XSS-Protection`             | `0` (modern browsers use CSP)                  |
+| `Referrer-Policy`              | `no-referrer`                                  |
+| `Strict-Transport-Security`    | 1 year (production only)                       |
+| `Cross-Origin-Resource-Policy` | `cross-origin` (for uploads)                   |
 
 ---
 
@@ -327,11 +336,11 @@ support forensic investigation of `TOKEN_REUSE_DETECTED` events.
 
 ## 18. Known Limitations & Future Work
 
-| Item                        | Status        | Notes                                          |
-|-----------------------------|---------------|------------------------------------------------|
-| OTP via real SMS            | Deferred      | Currently hardcoded to `123456`               |
-| Razorpay payments           | Deferred      | User explicitly deferred                      |
-| Account lockout persistence | In-memory     | Resets on server restart; replace with Redis for HA |
-| Multi-instance deployments  | Single-node   | Token cleanup + lockout are not distributed   |
-| Employer login page         | Pending       | Currently re-registration (upsert) = login    |
-| Admin 2FA                   | Not yet       | Consider TOTP for the admin account           |
+| Item                        | Status      | Notes                                               |
+| --------------------------- | ----------- | --------------------------------------------------- |
+| OTP via real SMS            | Deferred    | Currently hardcoded to `123456`                     |
+| Razorpay payments           | Deferred    | User explicitly deferred                            |
+| Account lockout persistence | In-memory   | Resets on server restart; replace with Redis for HA |
+| Multi-instance deployments  | Single-node | Token cleanup + lockout are not distributed         |
+| Employer login page         | Pending     | Currently re-registration (upsert) = login          |
+| Admin 2FA                   | Not yet     | Consider TOTP for the admin account                 |

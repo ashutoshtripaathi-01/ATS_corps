@@ -3,9 +3,10 @@ import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, PlusCircle, Briefcase, Building2,
-  Settings, LogOut, Zap, Menu, X, ChevronDown, Bell,
+  Settings, LogOut, Menu, X, ChevronDown, Bell,
   Users, BarChart3,
 } from 'lucide-react'
+import companyLogo from '@/assets/company logo.png'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -42,9 +43,7 @@ export function EmployerLayout() {
       <aside className="hidden md:flex flex-col w-56 bg-[#292e31] text-white h-screen sticky top-0 shrink-0">
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-4 h-16 border-b border-white/10">
-          <div className="w-8 h-8 rounded-lg bg-[#F7A607] flex items-center justify-center shrink-0">
-            <Zap className="w-4 h-4 text-white" />
-          </div>
+          <img src={companyLogo} alt='Ex-Serviceman Jobs' className='w-8 h-8 object-contain shrink-0' />
           <div className="min-w-0">
             <p className="font-bold text-sm leading-tight">{BRAND.name}</p>
             <p className="text-[10px] text-gray-400">Recruiter Portal</p>
@@ -193,9 +192,7 @@ export function EmployerLayout() {
             >
               <div className="flex items-center justify-between px-4 h-14 border-b border-white/10">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-[#F7A607] flex items-center justify-center">
-                    <Zap className="w-3.5 h-3.5 text-white" />
-                  </div>
+                  <img src={companyLogo} alt='Ex-Serviceman Jobs' className='w-7 h-7 object-contain' />
                   <span className="font-bold text-sm">{BRAND.name}</span>
                 </div>
                 <button onClick={() => setMobileOpen(false)} className="p-1.5 rounded-lg hover:bg-white/10">
