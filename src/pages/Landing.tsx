@@ -15,7 +15,10 @@ import {
   ChevronRight,
   IndianRupee,
   Phone,
-  ClipboardList,
+  Home,
+  Target,
+  Handshake,
+  FileCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Navbar } from '@/components/shared/Navbar';
@@ -25,51 +28,208 @@ import { BRAND } from '@/constants';
 import heroImage from '@/assets/cover.png';
 import heroBg from '@/assets/cover 1.png';
 import companyLogo from '@/assets/company logo.png';
+import logoHPCL from '@/assets/Partners logo/HPCL.png';
+import logoBCPL from '@/assets/Partners logo/BCPL.avif';
+import logoIOCL from '@/assets/Partners logo/IOCL.png';
+import logoPowerGrid from '@/assets/Partners logo/Powergrid.png';
+import logoNEEPCO from '@/assets/Partners logo/NEEPCO.png';
+import logoNSIC from '@/assets/Partners logo/NSIC.png';
+import logoAAI from '@/assets/Partners logo/AAI.png';
+import logoFCI from '@/assets/Partners logo/FCI.svg';
+import logoKingfisher from '@/assets/Partners logo/Kingfisher.png';
+import logoArmySchool from '@/assets/Partners logo/army public school.png';
 
 /* ─── Static data ────────────────────────────────────────────────────────── */
 
 const PARTNERS = [
   {
     abbr: 'HPCL',
-    full: 'Hindustan Petroleum',
-    bg: 'bg-green-50',
-    border: 'border-green-200',
-    text: 'text-green-800',
+    full: 'Hindustan Petroleum Corp.',
+    color: '#006837',
+    logo: logoHPCL,
+  },
+  {
+    abbr: 'BCPL',
+    full: 'Brahmaputra Cracker & Polymer',
+    color: '#1565C0',
+    logo: logoBCPL,
+  },
+  {
+    abbr: 'IOCL',
+    full: 'Indian Oil Corporation',
+    color: '#C62828',
+    logo: logoIOCL,
+  },
+  {
+    abbr: 'Power Grid',
+    full: 'Power Grid Corporation of India',
+    color: '#E65100',
+    logo: logoPowerGrid,
   },
   {
     abbr: 'NEEPCO',
     full: 'NE Electric Power Corp.',
+    color: '#0277BD',
+    logo: logoNEEPCO,
+  },
+  {
+    abbr: 'NSIC',
+    full: 'Natl. Small Industries Corp.',
+    color: '#1B5E20',
+    logo: logoNSIC,
+  },
+  {
+    abbr: 'AAI',
+    full: 'Airport Authority of India',
+    color: '#283593',
+    logo: logoAAI,
+  },
+  {
+    abbr: 'FCI',
+    full: 'Food Corporation of India',
+    color: '#4E342E',
+    logo: logoFCI,
+  },
+  {
+    abbr: 'Kingfisher',
+    full: 'Kingfisher',
+    color: '#880E4F',
+    logo: logoKingfisher,
+  },
+  {
+    abbr: 'Army School',
+    full: 'Army Public Schools',
+    color: '#4A5240',
+    logo: logoArmySchool,
+  },
+];
+
+const WHY_US = [
+  {
+    icon: MapPin,
+    title: 'Network of Offices',
+    desc: 'Physical offices in Guwahati, Agartala, and Aizawl — we operate where you live and serve.',
+    bg: 'bg-[#F7A607]/10',
+    color: 'text-[#F7A607]',
+  },
+  {
+    icon: Shield,
+    title: 'Northeast Ex-Serviceman Focus',
+    desc: 'Exclusively focused on ex-servicemen from Assam and the entire Northeast — no general candidates.',
     bg: 'bg-blue-50',
-    border: 'border-blue-200',
-    text: 'text-blue-800',
+    color: 'text-blue-600',
   },
   {
-    abbr: 'OIL',
-    full: 'Oil India Limited',
-    bg: 'bg-orange-50',
-    border: 'border-orange-200',
-    text: 'text-orange-800',
+    icon: Award,
+    title: 'Managed by Army Personnel',
+    desc: "Our leadership team comprises ex-servicemen — veterans who truly understand what you've given to the nation.",
+    bg: 'bg-green-50',
+    color: 'text-green-600',
   },
   {
-    abbr: 'ONGC',
-    full: 'Oil & Natural Gas Corp.',
-    bg: 'bg-red-50',
-    border: 'border-red-200',
-    text: 'text-red-800',
-  },
-  {
-    abbr: 'NRL',
-    full: 'Numaligarh Refinery Ltd.',
+    icon: Building2,
+    title: 'Multi-State Presence',
+    desc: 'Local companies with operational offices across multiple states for broader reach and faster placements.',
     bg: 'bg-purple-50',
-    border: 'border-purple-200',
-    text: 'text-purple-800',
+    color: 'text-purple-600',
   },
   {
-    abbr: 'BVFCL',
-    full: 'Brahmaputra Valley Fertilizer',
+    icon: UserCheck,
+    title: 'Exclusively for Ex-Servicemen',
+    desc: 'A dedicated platform only for veterans — every employer on our portal knows they are hiring military-trained professionals.',
+    bg: 'bg-red-50',
+    color: 'text-red-600',
+  },
+  {
+    icon: Home,
+    title: 'Job Near Your Home Station',
+    desc: 'We prioritize placements close to your home district so you can serve your country and stay close to family.',
     bg: 'bg-teal-50',
-    border: 'border-teal-200',
-    text: 'text-teal-800',
+    color: 'text-teal-600',
+  },
+];
+
+const SERVICES = [
+  {
+    icon: Shield,
+    title: 'Security Staffing',
+    desc: 'Armed & unarmed security guards, supervisors, and QRT teams for industrial, commercial, and residential premises.',
+    tag: 'Most Popular',
+  },
+  {
+    icon: Building2,
+    title: 'Industrial Workforce',
+    desc: 'Operators, technicians, and support staff for PSUs, refineries, power plants, and manufacturing facilities.',
+    tag: null,
+  },
+  {
+    icon: Briefcase,
+    title: 'Permanent Placement',
+    desc: 'End-to-end permanent recruitment connecting ex-servicemen with long-term verified employer positions.',
+    tag: null,
+  },
+  {
+    icon: Users,
+    title: 'Contractual Staffing',
+    desc: 'Project-based deployment of ex-servicemen for short to medium-term workforce requirements.',
+    tag: null,
+  },
+  {
+    icon: Award,
+    title: 'Driver & Support Staff',
+    desc: 'Verified drivers, dog handlers, traffic marshals, and specialized support personnel for any deployment.',
+    tag: null,
+  },
+  {
+    icon: FileCheck,
+    title: 'Documentation Support',
+    desc: 'Assistance with service records, NOC, background verification, and complete employment documentation.',
+    tag: null,
+  },
+];
+
+const WHY_HIRE = [
+  {
+    icon: Shield,
+    title: 'Disciplined & Punctual',
+    desc: 'Military training instills unmatched discipline, time-management, and strict adherence to protocol.',
+    color: 'text-blue-600',
+    bg: 'bg-blue-50',
+  },
+  {
+    icon: Award,
+    title: 'Natural Leaders',
+    desc: 'Ex-servicemen assume leadership naturally, manage teams effectively, and handle high-pressure crises with calm.',
+    color: 'text-[#F7A607]',
+    bg: 'bg-[#F7A607]/10',
+  },
+  {
+    icon: FileCheck,
+    title: 'Pre-Verified Background',
+    desc: "Every candidate's military service record and character is already verified through government and service records.",
+    color: 'text-green-600',
+    bg: 'bg-green-50',
+  },
+  {
+    icon: Target,
+    title: 'Quick to Adapt',
+    desc: 'Trained in multi-domain operations, ex-servicemen adapt rapidly to civilian roles with minimal training time.',
+    color: 'text-purple-600',
+    bg: 'bg-purple-50',
+  },
+  {
+    icon: Handshake,
+    title: 'High Integrity & Loyalty',
+    desc: 'Years of service build strong values — honesty, loyalty, and ethical conduct are ingrained in every veteran.',
+    color: 'text-red-600',
+    bg: 'bg-red-50',
+  },
+  {
+    icon: IndianRupee,
+    title: 'Cost-Effective Hiring',
+    desc: 'Reduce onboarding time and training cost with candidates who arrive deployment-ready with proven skills.',
+    color: 'text-teal-600',
+    bg: 'bg-teal-50',
   },
 ];
 
@@ -121,37 +281,6 @@ const WHO_WE_SERVE = [
     bg: 'bg-orange-50',
     color: 'text-orange-600',
     tags: ['Tea Estates', 'Banks', 'Hospitality', 'Construction'],
-  },
-];
-
-const WHY_EMPLOYERS = [
-  {
-    icon: UserCheck,
-    title: 'Verified Workforce',
-    desc: 'Every candidate undergoes profile verification before being recommended to your organization.',
-    bg: 'bg-blue-50',
-    color: 'text-blue-600',
-  },
-  {
-    icon: Zap,
-    title: 'Faster Hiring',
-    desc: 'Receive a shortlisted pool of qualified candidates matched to your specific workforce requirements.',
-    bg: 'bg-[#F7A607]/10',
-    color: 'text-[#F7A607]',
-  },
-  {
-    icon: ClipboardList,
-    title: 'Recruitment Support',
-    desc: 'Ex-Serviceman Jobs actively supports you throughout the hiring, screening, and placement process.',
-    bg: 'bg-green-50',
-    color: 'text-green-600',
-  },
-  {
-    icon: MapPin,
-    title: 'Location-Based Deployment',
-    desc: 'Find candidates based on district, region, shift requirement, and deployment availability.',
-    bg: 'bg-purple-50',
-    color: 'text-purple-600',
   },
 ];
 
@@ -442,253 +571,165 @@ export default function Landing() {
       </section>
 
       {/* ══════════════════════════════════════════
-          TRUST STRIP — Partners
+          TRUST STRIP — Partners Marquee
       ══════════════════════════════════════════ */}
       <section className='bg-[#1a1d1f] py-10 border-t border-white/5'>
-        <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
-          <div className='text-center mb-5'>
-            <p className='text-sm font-semibold text-gray-300'>
-              Trusted by Leading Organizations
-            </p>
-            <p className='text-xs text-gray-500 mt-1'>
-              Supporting workforce recruitment for public sector organizations,
-              security agencies, and private employers.
-            </p>
-          </div>
-          <div className='flex flex-wrap items-center justify-center gap-3 mb-5'>
-            {PARTNERS.map((p) => (
+        <div className='text-center mb-7 px-4'>
+          <p className='text-sm font-semibold text-gray-300 uppercase tracking-wider'>
+            Trusted by Leading Organizations
+          </p>
+          <p className='text-xs text-gray-500 mt-1'>
+            PSUs, government agencies, and private employers across Northeast
+            India
+          </p>
+        </div>
+
+        {/* Marquee — overflow hidden with fade edges */}
+        <div className='relative overflow-hidden'>
+          {/* Left fade */}
+          <div className='absolute left-0 top-0 h-full w-24 z-10 pointer-events-none bg-gradient-to-r from-[#1a1d1f] to-transparent' />
+          {/* Right fade */}
+          <div className='absolute right-0 top-0 h-full w-24 z-10 pointer-events-none bg-gradient-to-l from-[#1a1d1f] to-transparent' />
+
+          <div className='marquee-track flex gap-5 w-max'>
+            {[...PARTNERS, ...PARTNERS].map((p, i) => (
               <div
-                key={p.abbr}
-                className={`flex items-center gap-2 ${p.bg} ${p.border} border rounded-xl px-3.5 py-2`}
+                key={i}
+                className='flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl px-5 py-3.5 shrink-0 hover:bg-white/10 transition-colors'
               >
-                <span className={`text-sm font-extrabold ${p.text}`}>
-                  {p.abbr}
-                </span>
-                <span className='text-xs text-gray-500 hidden xl:block'>
-                  {p.full}
-                </span>
+                {/* Logo image or letter badge fallback */}
+                <div className='w-30 h-30 rounded-xl bg-white flex items-center justify-center shrink-0 overflow-hidden p-1'>
+                  {p.logo ? (
+                    <img
+                      src={p.logo}
+                      alt={p.abbr}
+                      className='w-full h-full object-contain'
+                    />
+                  ) : (
+                    <span
+                      className='text-xs font-extrabold leading-none'
+                      style={{ color: p.color }}
+                    >
+                      {p.abbr.slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <p className='text-sm font-bold text-white whitespace-nowrap'>
+                    {p.abbr}
+                  </p>
+                  <p className='text-[11px] text-gray-400 whitespace-nowrap'>
+                    {p.full}
+                  </p>
+                </div>
               </div>
             ))}
-          </div>
-          <div className='flex justify-center'>
-            <div
-              className='inline-flex items-center gap-2 px-4 py-2 border border-dashed border-[#F7A607]/40 rounded-xl cursor-pointer hover:border-[#F7A607] transition-colors'
-              onClick={() => openAuth('register')}
-            >
-              <span className='text-xs font-semibold text-[#F7A607]'>
-                + Register Your Company
-              </span>
-            </div>
           </div>
         </div>
       </section>
 
       {/* ══════════════════════════════════════════
-          HOW Ex-Serviceman Jobs SUPPORTS RECRUITMENT
+          DGR JOB FAIR PARTNER
       ══════════════════════════════════════════ */}
-      <section className='py-20 bg-white'>
-        <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
-          <div className='text-center mb-14'>
-            <div className='inline-flex items-center gap-2 bg-[#F7A607]/10 rounded-full px-4 py-1.5 mb-4'>
-              <Zap className='w-4 h-4 text-[#F7A607]' />
-              <span className='text-sm font-semibold text-[#F7A607]'>
-                Our Process
-              </span>
-            </div>
-            <h2
-              className='text-4xl font-extrabold text-gray-900 mb-4'
-              style={{ fontFamily: 'Plus Jakarta Sans' }}
-            >
-              How Ex-Serviceman Jobs Supports Recruitment
-            </h2>
-            <p className='text-gray-500 text-lg max-w-2xl mx-auto leading-relaxed'>
-              Ex-Serviceman Jobs manages candidate verification, workforce
-              matching, employer requirements, and placement coordination to
-              ensure successful hiring outcomes.
-            </p>
-          </div>
+      <section className='py-14 bg-white'>
+        <div className='max-w-5xl mx-auto px-4 sm:px-6 lg:px-8'>
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className='relative bg-gradient-to-r from-[#1a1d1f] to-[#292e31] rounded-3xl p-8 md:p-12 overflow-hidden'
+          >
+            {/* Background accent */}
+            <div className='absolute top-0 right-0 w-64 h-64 rounded-full bg-[#F7A607]/8 -translate-y-1/2 translate-x-1/4 pointer-events-none' />
+            <div className='absolute bottom-0 left-0 w-48 h-48 rounded-full bg-[#F7A607]/5 translate-y-1/2 -translate-x-1/4 pointer-events-none' />
 
-          {/* Three-party diagram */}
-          <div className='flex flex-col md:flex-row items-center justify-center gap-4 md:gap-0 mb-16'>
-            {/* Employer box */}
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-              className='bg-gray-50 border border-gray-200 rounded-2xl p-6 text-center w-full max-w-[220px]'
-            >
-              <div className='w-12 h-12 rounded-xl bg-[#292e31] flex items-center justify-center mx-auto mb-3'>
-                <Building2 className='w-5 h-5 text-[#F7A607]' />
-              </div>
-              <p
-                className='font-extrabold text-gray-900 mb-1'
-                style={{ fontFamily: 'Plus Jakarta Sans' }}
-              >
-                Employer
-              </p>
-              <p className='text-xs text-gray-500 leading-snug'>
-                Posts manpower requirements, pays registration fee
-              </p>
-            </motion.div>
-
-            {/* Arrow + Ex-Serviceman Jobs */}
-            <div className='flex flex-col md:flex-row items-center gap-0 md:gap-0'>
-              <motion.div
-                initial={{ scaleX: 0 }}
-                whileInView={{ scaleX: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: 0.2 }}
-                className='hidden md:block h-0.5 w-12 bg-[#F7A607]/40 origin-left'
-              />
-              <div className='w-3 h-3 rounded-full bg-[#F7A607]/40 hidden md:block' />
-
-              <motion.div
-                initial={{ opacity: 0, scale: 0.85 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: 0.3 }}
-                className='relative mx-4'
-              >
-                <div className='bg-[#292e31] rounded-2xl p-5 text-center shadow-2xl shadow-[#292e31]/20 relative z-10 w-56'>
-                  <img
-                    src={companyLogo}
-                    alt='Ex-Serviceman Jobs'
-                    className='w-12 h-12 object-contain mx-auto mb-3'
-                  />
-                  <p
-                    className='font-extrabold text-white text-base mb-1'
-                    style={{ fontFamily: 'Plus Jakarta Sans' }}
-                  >
-                    Ex-Serviceman Jobs
-                  </p>
-                  <p className='text-xs text-gray-400 leading-snug'>
-                    Verification · Screening · Matching · Placement
-                  </p>
-                  <div className='absolute -top-2 -right-2 bg-[#F7A607] rounded-full px-2 py-0.5'>
-                    <span className='text-[10px] font-bold text-white'>
-                      Middle Layer
-                    </span>
-                  </div>
+            <div className='relative z-10 flex flex-col md:flex-row items-center gap-8'>
+              {/* Badge */}
+              <div className='shrink-0 flex flex-col items-center'>
+                <div className='w-24 h-24 rounded-2xl bg-[#F7A607] flex items-center justify-center shadow-xl shadow-[#F7A607]/30 mb-3'>
+                  <Shield className='w-12 h-12 text-white' />
                 </div>
-              </motion.div>
-
-              <div className='w-3 h-3 rounded-full bg-[#F7A607]/40 hidden md:block' />
-              <motion.div
-                initial={{ scaleX: 0 }}
-                whileInView={{ scaleX: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: 0.2 }}
-                className='hidden md:block h-0.5 w-12 bg-[#F7A607]/40 origin-right'
-              />
-            </div>
-
-            {/* Candidate box */}
-            <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-              className='bg-gray-50 border border-gray-200 rounded-2xl p-6 text-center w-full max-w-[220px]'
-            >
-              <div className='w-12 h-12 rounded-xl bg-blue-600 flex items-center justify-center mx-auto mb-3'>
-                <Shield className='w-5 h-5 text-white' />
+                <span className='text-xs font-bold text-[#F7A607] uppercase tracking-wider text-center'>
+                  Govt. of India
+                </span>
               </div>
-              <p
-                className='font-extrabold text-gray-900 mb-1'
-                style={{ fontFamily: 'Plus Jakarta Sans' }}
-              >
-                Candidate
-              </p>
-              <p className='text-xs text-gray-500 leading-snug'>
-                Verified, matched, and placed by Ex-Serviceman Jobs
-              </p>
-            </motion.div>
-          </div>
 
-          {/* 3 value props */}
-          <div className='grid grid-cols-1 md:grid-cols-3 gap-6'>
-            {[
-              {
-                icon: UserCheck,
-                title: 'Verified Profiles',
-                desc: 'Every candidate is verified before placement. Employers receive pre-screened, background-checked personnel.',
-                bg: 'bg-blue-50',
-                color: 'text-blue-600',
-              },
-              {
-                icon: Zap,
-                title: 'Workforce Matching',
-                desc: 'Ex-Serviceman Jobs matches candidate skills, experience, and location preference against employer requirements.',
-                bg: 'bg-[#F7A607]/10',
-                color: 'text-[#F7A607]',
-              },
-              {
-                icon: CheckCircle,
-                title: 'End-to-End Placement',
-                desc: 'From registration to final hire, Ex-Serviceman Jobs manages the complete recruitment workflow for both parties.',
-                bg: 'bg-green-50',
-                color: 'text-green-600',
-              },
-            ].map(({ icon: Icon, title, desc, bg, color }, i) => (
-              <motion.div
-                key={title}
-                initial={{ opacity: 0, y: 24 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.45, delay: i * 0.12 }}
-                className='bg-white border border-gray-100 rounded-2xl p-6 shadow-sm'
-              >
-                <div
-                  className={`w-12 h-12 rounded-2xl ${bg} flex items-center justify-center mb-4`}
-                >
-                  <Icon className={`w-6 h-6 ${color}`} />
+              {/* Text */}
+              <div className='flex-1 text-center md:text-left'>
+                <div className='inline-flex items-center gap-2 bg-[#F7A607]/15 rounded-full px-3 py-1 mb-3'>
+                  <span className='text-xs font-bold text-[#F7A607]'>
+                    Official Partner
+                  </span>
                 </div>
                 <h3
-                  className='font-bold text-gray-900 mb-2'
+                  className='text-2xl md:text-3xl font-extrabold text-white mb-3 leading-tight'
                   style={{ fontFamily: 'Plus Jakarta Sans' }}
                 >
-                  {title}
+                  DGR Job Fair Partner
                 </h3>
-                <p className='text-sm text-gray-500 leading-relaxed'>{desc}</p>
-              </motion.div>
-            ))}
-          </div>
+                <p className='text-gray-300 text-sm leading-relaxed max-w-xl'>
+                  We are an empanelled partner of the{' '}
+                  <span className='text-white font-semibold'>
+                    Directorate General of Resettlement (DGR)
+                  </span>
+                  , Ministry of Defence, Government of India — supporting the
+                  official ex-servicemen resettlement programme through
+                  registered job fairs and verified placements.
+                </p>
+                <div className='flex flex-wrap gap-3 mt-5 justify-center md:justify-start'>
+                  {[
+                    'Ministry of Defence',
+                    'Govt. of India',
+                    'DGR Empanelled',
+                    'Official Job Fairs',
+                  ].map((tag) => (
+                    <span
+                      key={tag}
+                      className='text-xs font-semibold text-white bg-white/10 border border-white/15 px-3 py-1.5 rounded-full'
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </motion.div>
         </div>
       </section>
 
       {/* ══════════════════════════════════════════
-          WHY EMPLOYERS CHOOSE Ex-Serviceman Jobs
+          WHY CHOOSE US
       ══════════════════════════════════════════ */}
       <section className='py-20 bg-[#f8f9fc]'>
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
           <div className='text-center mb-12'>
-            <div className='inline-flex items-center gap-2 bg-[#292e31]/8 rounded-full px-4 py-1.5 mb-4'>
-              <Building2 className='w-4 h-4 text-[#292e31]' />
-              <span className='text-sm font-semibold text-[#292e31]'>
-                For Employers
+            <div className='inline-flex items-center gap-2 bg-[#F7A607]/10 rounded-full px-4 py-1.5 mb-4'>
+              <Award className='w-4 h-4 text-[#F7A607]' />
+              <span className='text-sm font-semibold text-[#F7A607]'>
+                Why Choose Us
               </span>
             </div>
             <h2
               className='text-4xl font-extrabold text-gray-900 mb-3'
               style={{ fontFamily: 'Plus Jakarta Sans' }}
             >
-              Why Employers Choose Ex-Serviceman Jobs
+              What Makes Us Different
             </h2>
             <p className='text-gray-500 text-lg max-w-xl mx-auto'>
-              We take the complexity out of workforce recruitment and deliver
-              results your organization can rely on.
+              Built by veterans, for veterans — the only platform exclusively
+              serving ex-servicemen across Northeast India.
             </p>
           </div>
 
-          <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5'>
-            {WHY_EMPLOYERS.map(({ icon: Icon, title, desc, bg, color }, i) => (
+          <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5'>
+            {WHY_US.map(({ icon: Icon, title, desc, bg, color }, i) => (
               <motion.div
                 key={title}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: i * 0.1 }}
+                transition={{ duration: 0.4, delay: i * 0.08 }}
                 className='bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow'
               >
                 <div
@@ -900,35 +941,147 @@ export default function Landing() {
       {/* ══════════════════════════════════════════
           STATS
       ══════════════════════════════════════════ */}
-      <section className='py-16 bg-[#1a1d1f] text-white'>
+      <section className='py-16 bg-[#F7A607]'>
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
           <div className='grid grid-cols-2 lg:grid-cols-4 gap-8'>
-            {STATS.map(
-              ({ value, suffix, label, sub, icon: Icon, bg, color }, i) => (
-                <motion.div
-                  key={label}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.45, delay: i * 0.1 }}
-                  className='flex flex-col items-center text-center'
+            {STATS.map(({ value, suffix, label, sub, icon: Icon }, i) => (
+              <motion.div
+                key={label}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.45, delay: i * 0.1 }}
+                className='flex flex-col items-center text-center'
+              >
+                <div className='w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-4'>
+                  <Icon className='w-6 h-6 text-white' />
+                </div>
+                <p
+                  className='text-4xl font-extrabold text-white mb-1'
+                  style={{ fontFamily: 'Plus Jakarta Sans' }}
                 >
-                  <div
-                    className={`w-12 h-12 rounded-2xl ${bg} flex items-center justify-center mb-4`}
-                  >
-                    <Icon className={`w-6 h-6 ${color}`} />
-                  </div>
-                  <p
-                    className='text-4xl font-extrabold text-white mb-1'
-                    style={{ fontFamily: 'Plus Jakarta Sans' }}
-                  >
-                    <AnimatedCounter end={value} suffix={suffix} />
-                  </p>
-                  <p className='font-semibold text-gray-200 text-sm'>{label}</p>
-                  <p className='text-gray-500 text-xs mt-0.5'>{sub}</p>
-                </motion.div>
-              ),
-            )}
+                  <AnimatedCounter end={value} suffix={suffix} />
+                </p>
+                <p className='font-semibold text-white text-sm'>{label}</p>
+                <p className='text-white/70 text-xs mt-0.5'>{sub}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════════
+          OUR SERVICES
+      ══════════════════════════════════════════ */}
+      <section className='py-20 bg-[#f8f9fc]'>
+        <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
+          <div className='text-center mb-12'>
+            <div className='inline-flex items-center gap-2 bg-[#292e31]/8 rounded-full px-4 py-1.5 mb-4'>
+              <Briefcase className='w-4 h-4 text-[#292e31]' />
+              <span className='text-sm font-semibold text-[#292e31]'>
+                Our Services
+              </span>
+            </div>
+            <h2
+              className='text-4xl font-extrabold text-gray-900 mb-3'
+              style={{ fontFamily: 'Plus Jakarta Sans' }}
+            >
+              What We Offer
+            </h2>
+            <p className='text-gray-500 text-lg max-w-xl mx-auto'>
+              End-to-end workforce solutions for both ex-servicemen seeking
+              employment and organizations seeking verified manpower.
+            </p>
+          </div>
+
+          <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5'>
+            {SERVICES.map(({ icon: Icon, title, desc, tag }, i) => (
+              <motion.div
+                key={title}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.4, delay: i * 0.08 }}
+                className='relative bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-[#F7A607]/30 transition-all group'
+              >
+                {tag && (
+                  <span className='absolute top-4 right-4 text-[10px] font-bold bg-[#F7A607] text-white px-2 py-0.5 rounded-full'>
+                    {tag}
+                  </span>
+                )}
+                <div className='w-12 h-12 rounded-2xl bg-[#F7A607]/10 flex items-center justify-center mb-4 group-hover:bg-[#F7A607]/20 transition-colors'>
+                  <Icon className='w-6 h-6 text-[#F7A607]' />
+                </div>
+                <h3
+                  className='font-bold text-gray-900 mb-2'
+                  style={{ fontFamily: 'Plus Jakarta Sans' }}
+                >
+                  {title}
+                </h3>
+                <p className='text-sm text-gray-500 leading-relaxed'>{desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════════
+          WHY HIRE EX-SERVICEMAN
+      ══════════════════════════════════════════ */}
+      <section className='py-20 bg-[#1a1d1f]'>
+        <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
+          <div className='text-center mb-12'>
+            <div className='inline-flex items-center gap-2 bg-[#F7A607]/15 rounded-full px-4 py-1.5 mb-4'>
+              <Shield className='w-4 h-4 text-[#F7A607]' />
+              <span className='text-sm font-semibold text-[#F7A607]'>
+                For Employers
+              </span>
+            </div>
+            <h2
+              className='text-4xl font-extrabold text-white mb-3'
+              style={{ fontFamily: 'Plus Jakarta Sans' }}
+            >
+              Why Hire an Ex-Serviceman?
+            </h2>
+            <p className='text-gray-400 text-lg max-w-xl mx-auto'>
+              Ex-servicemen bring a unique set of skills, values, and work ethic
+              that no civilian training can replicate.
+            </p>
+          </div>
+
+          <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5'>
+            {WHY_HIRE.map(({ icon: Icon, title, desc, color, bg }, i) => (
+              <motion.div
+                key={title}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.4, delay: i * 0.08 }}
+                className='bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/8 hover:border-[#F7A607]/30 transition-all'
+              >
+                <div
+                  className={`w-12 h-12 rounded-2xl ${bg} flex items-center justify-center mb-4`}
+                >
+                  <Icon className={`w-6 h-6 ${color}`} />
+                </div>
+                <h3
+                  className='font-bold text-white mb-2'
+                  style={{ fontFamily: 'Plus Jakarta Sans' }}
+                >
+                  {title}
+                </h3>
+                <p className='text-sm text-gray-400 leading-relaxed'>{desc}</p>
+              </motion.div>
+            ))}
+          </div>
+
+          <div className='text-center mt-10'>
+            <button
+              onClick={() => openAuth('register')}
+              className='inline-flex items-center gap-2 bg-[#F7A607] hover:bg-[#e09500] text-white font-bold px-7 py-3.5 rounded-xl transition-colors shadow-lg shadow-[#F7A607]/20'
+            >
+              Start Hiring Ex-Servicemen <ArrowRight className='w-4 h-4' />
+            </button>
           </div>
         </div>
       </section>

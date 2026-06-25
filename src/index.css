@@ -99,3 +99,15 @@ h1, h2, h3, h4, h5, h6 {
 .animated-underline:hover::after {
   width: 100%;
 }
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.marquee-track {
+  animation: marquee 35s linear infinite;
+  will-change: transform;
+}
+.marquee-track:hover {
+  animation-play-state: paused;
+}
