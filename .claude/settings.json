@@ -10,7 +10,9 @@
       "WebFetch(domain:gharkamai.com)",
       "WebFetch(domain:gharkamali.com)",
       "WebFetch(domain:www.esmhire.com)",
-      "WebFetch(domain:webcache.googleusercontent.com)"
+      "WebFetch(domain:webcache.googleusercontent.com)",
+      "Bash(cat .gitignore)",
+      "Bash(cat server/.gitignore)"
     ]
   }
 }
