@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/store/useAppStore';
 import { toast } from '@/hooks/useToast';
-import { sendOtp, verifyOtp } from '@/lib/api';
+import { sendOtp, verifyOtp, widgetLogin } from '@/lib/api';
 import { setToken } from '@/lib/tokenStore';
 
 type Step = 'mobile' | 'otp' | 'profile' | 'success';
@@ -91,25 +91,78 @@ export function CandidateAuthModal({
     if (resendTimer === 0) setCanResend(true);
   }, [step, resendTimer]);
 
+  const completeLogin = async (verifiedMobile: string) => {
+    try {
+      const result = await widgetLogin(verifiedMobile);
+      if (mode === 'register' || !result.exists) {
+        onClose();
+        navigate('/candidate/register', { state: { mobile: verifiedMobile } });
+        return;
+      }
+      if (result.exists && result.candidate) {
+        const c = result.candidate;
+        if (result.accessToken) setToken(result.accessToken);
+        setUser({
+          id:        String(c.id),
+          name:      c.full_name,
+          email:     `${verifiedMobile}@candidate.ats`,
+          role:      'candidate',
+          avatar:    `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.full_name}`,
+          createdAt: new Date(c.created_at),
+        });
+        setStep('success');
+        setTimeout(() => { onClose(); navigate('/candidate/dashboard'); }, 1200);
+      }
+    } catch (err: any) {
+      toast({ title: 'Login failed', description: err.message || 'Please try again.', variant: 'error' });
+    }
+  };
+
   const handleSendOtp = async (formData: MobileForm) => {
     setSendingOtp(true);
+    setMobile(formData.mobile);
+
+    const widgetId   = import.meta.env.VITE_MSG91_WIDGET_ID as string | undefined;
+    const tokenAuth  = import.meta.env.VITE_MSG91_TOKEN_AUTH as string | undefined;
+
+    // ── MSG91 Widget path ───────────────────────────────────────────────
+    if (widgetId && tokenAuth) {
+      // Load the widget script if not already on the page
+      if (!(window as any).initSendOTP) {
+        await new Promise<void>((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://verify.msg91.com/otp-provider.js';
+          s.onload  = () => resolve();
+          s.onerror = () => reject(new Error('Failed to load MSG91 widget'));
+          document.head.appendChild(s);
+        });
+      }
+
+      (window as any).initSendOTP?.({
+        widgetId,
+        tokenAuth,
+        identifier: `91${formData.mobile}`,
+        success: async (_data: any) => {
+          setSendingOtp(false);
+          await completeLogin(formData.mobile);
+        },
+        failure: (error: any) => {
+          setSendingOtp(false);
+          toast({ title: 'OTP verification failed', description: String(error), variant: 'error' });
+        },
+      });
+      return; // widget takes over — don't fall through
+    }
+
+    // ── API fallback (no widget credentials set) ────────────────────────
     try {
       await sendOtp(formData.mobile);
-      setMobile(formData.mobile);
       setResendTimer(30);
       setCanResend(false);
       setStep('otp');
-      toast({
-        title: 'OTP Sent!',
-        description: `OTP sent to +91 ${formData.mobile}.`,
-        variant: 'success',
-      });
+      toast({ title: 'OTP Sent!', description: `OTP sent to +91 ${formData.mobile}.`, variant: 'success' });
     } catch (err: any) {
-      toast({
-        title: 'Failed to send OTP',
-        description: err.message || 'Please try again.',
-        variant: 'error',
-      });
+      toast({ title: 'Failed to send OTP', description: err.message || 'Please try again.', variant: 'error' });
     } finally {
       setSendingOtp(false);
     }
@@ -144,39 +197,25 @@ export function CandidateAuthModal({
 
   const handleVerifyOtp = async () => {
     const entered = otp.join('');
-    if (entered.length < 6) {
-      setOtpError('Enter the complete 6-digit OTP');
-      return;
-    }
+    if (entered.length < 6) { setOtpError('Enter the complete 6-digit OTP'); return; }
     setVerifying(true);
     try {
       const result = await verifyOtp(mobile, entered);
       setVerifying(false);
-      if (mode === 'register') {
+      if (mode === 'register' || !result.exists) {
         onClose();
         navigate('/candidate/register', { state: { mobile } });
-      } else {
-        if (result.exists && result.candidate) {
-          const c = result.candidate;
-          if (result.accessToken) setToken(result.accessToken);
-          setUser({
-            id: String(c.id),
-            name: c.full_name,
-            email: `${mobile}@candidate.ats`,
-            role: 'candidate',
-            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.full_name}`,
-            createdAt: new Date(c.created_at),
-          });
-          setStep('success');
-          setTimeout(() => {
-            onClose();
-            navigate('/candidate/dashboard');
-          }, 1200);
-        } else {
-          // No account found — send to register
-          onClose();
-          navigate('/candidate/register', { state: { mobile } });
-        }
+      } else if (result.exists && result.candidate) {
+        const c = result.candidate;
+        if (result.accessToken) setToken(result.accessToken);
+        setUser({
+          id: String(c.id), name: c.full_name,
+          email: `${mobile}@candidate.ats`, role: 'candidate',
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.full_name}`,
+          createdAt: new Date(c.created_at),
+        });
+        setStep('success');
+        setTimeout(() => { onClose(); navigate('/candidate/dashboard'); }, 1200);
       }
     } catch (err: any) {
       setOtpError(err.message || 'Invalid OTP. Please try again.');

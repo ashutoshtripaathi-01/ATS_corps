@@ -92,6 +92,14 @@ export const verifyOtp = (mobile: string, otp: string) =>
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobile, otp }) },
   )
 
+// Called after MSG91 widget confirms OTP — issues our JWT without re-verifying OTP
+export const widgetLogin = (mobile: string) =>
+  req<{ success: boolean; exists: boolean; candidate?: any; accessToken?: string }>(
+    `${API_BASE}/candidates/widget-login`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobile }) },
+    false,
+  )
+
 export const registerCandidate = (formData: FormData) =>
   req<{ success: boolean; candidate: any; accessToken: string }>(
     `${API_BASE}/candidates/register`,

@@ -77,6 +77,42 @@ const otpLimiter = rateLimit({
   message: { error: 'Too many OTP requests. Please try again in 15 minutes.' },
 })
 
+/* ── GET /get-user ──────────────────────────────────────────────────── */
+// MSG91 widget calls this before sending OTP to check if the user exists.
+// Identifier arrives with country code prefix (e.g. "919876543210") — strip it.
+router.get('/get-user', async (req: Request, res: Response) => {
+  const raw = String(req.query.identifier ?? '')
+  const mobile = raw.replace(/\D/g, '').slice(-10)
+  if (mobile.length !== 10) return res.status(400).json({ message: 'invalid identifier' })
+
+  const result = await pool.query('SELECT id FROM candidates WHERE mobile=$1', [mobile])
+  return res.json({
+    message: 'success',
+    data: { is_exists: result.rows.length > 0 },
+  })
+})
+
+/* ── POST /widget-login ─────────────────────────────────────────────── */
+// Called by the frontend after MSG91 widget confirms OTP is verified.
+// We trust the widget's verified callback and issue our own JWT.
+router.post('/widget-login', async (req: Request, res: Response) => {
+  const parse = z.object({ mobile: mobileSchema }).safeParse(req.body)
+  if (!parse.success) return res.status(400).json({ error: 'Invalid mobile number' })
+
+  const { mobile } = parse.data
+  const cand = await pool.query('SELECT * FROM candidates WHERE mobile=$1', [mobile])
+
+  if (cand.rows.length > 0) {
+    const c = cand.rows[0]
+    const accessToken = signAccessToken({ id: String(c.id), role: 'candidate' })
+    await issueRefreshToken(res, String(c.id), 'candidate')
+    audit(A.LOGIN_SUCCESS, { userId: String(c.id), req, metadata: { via: 'msg91-widget' } })
+    return res.json({ success: true, exists: true, candidate: c, accessToken })
+  }
+
+  return res.json({ success: true, exists: false })
+})
+
 /* ── Request schemas ─────────────────────────────────────────────────── */
 const sendOtpSchema   = z.object({ mobile: mobileSchema })
 const verifyOtpSchema = z.object({ mobile: mobileSchema, otp: otpSchema })
