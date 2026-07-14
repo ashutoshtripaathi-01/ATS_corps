@@ -87,8 +87,8 @@ router.get('/get-user', async (req: Request, res: Response) => {
 
   const result = await pool.query('SELECT id FROM candidates WHERE mobile=$1', [mobile])
   return res.json({
-    message: 'success',
-    data: { is_exists: result.rows.length > 0 },
+    user_found: result.rows.length > 0,
+    identifier: raw,
   })
 })
 
