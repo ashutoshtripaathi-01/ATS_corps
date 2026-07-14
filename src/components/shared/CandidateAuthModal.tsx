@@ -141,7 +141,7 @@ export function CandidateAuthModal({
       (window as any).initSendOTP?.({
         widgetId,
         tokenAuth,
-        identifier: `91${formData.mobile}`,
+        identifier: `+91${formData.mobile}`,
         success: async (_data: any) => {
           setSendingOtp(false);
           await completeLogin(formData.mobile);
