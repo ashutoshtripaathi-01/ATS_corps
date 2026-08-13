@@ -1,207 +1,167 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, Bell, Shield, LogOut, ChevronRight } from 'lucide-react';
+import { Settings, Bell, Shield, LogOut, ChevronRight, User, Moon, Sun, HelpCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '@/store/useAppStore';
 import { toast } from '@/hooks/useToast';
 
-const card =
-  'bg-white dark:bg-[#1e2227] border border-gray-100 dark:border-white/8 rounded-2xl shadow-sm overflow-hidden';
-const cardHeader =
-  'flex items-center gap-2 px-4 py-3 border-b border-gray-50 dark:border-white/8';
-const cardTitle = 'text-sm font-bold text-gray-900 dark:text-[#F0EFEA]';
-const rowText = 'text-sm text-gray-700 dark:text-gray-200';
-const rowSub = 'text-xs text-gray-400 dark:text-gray-500 mt-0.5';
-const divider = 'divide-y divide-gray-50 dark:divide-white/6';
-const rowHover = 'hover:bg-gray-50 dark:hover:bg-white/5 transition-colors';
+const Toggle = ({ on, onToggle }: { on: boolean; onToggle: () => void }) => (
+  <button onClick={onToggle}
+    className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${on ? 'bg-[#F7A607]' : 'bg-gray-200 dark:bg-white/15'}`}
+  >
+    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${on ? 'left-[22px]' : 'left-0.5'}`} />
+  </button>
+);
+
+const SettingRow = ({ label, sub, action }: { label: string; sub?: string; action: React.ReactNode }) => (
+  <div className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors gap-4">
+    <div className="flex-1 min-w-0">
+      <p className="text-sm font-medium text-gray-900 dark:text-[#F0EFEA]">{label}</p>
+      {sub && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{sub}</p>}
+    </div>
+    {action}
+  </div>
+);
+
+const SectionCard = ({ title, icon: Icon, children }: { title: string; icon: React.ElementType; children: React.ReactNode }) => (
+  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+    className="bg-white dark:bg-[#1e2227] border border-gray-100 dark:border-white/8 rounded-2xl shadow-sm overflow-hidden"
+  >
+    <div className="flex items-center gap-2.5 px-5 py-4 border-b border-gray-50 dark:border-white/8">
+      <div className="w-7 h-7 rounded-lg bg-[#F7A607]/10 flex items-center justify-center">
+        <Icon className="w-3.5 h-3.5 text-[#F7A607]" />
+      </div>
+      <p className="text-sm font-bold text-gray-900 dark:text-[#F0EFEA]">{title}</p>
+    </div>
+    <div className="divide-y divide-gray-50 dark:divide-white/6">{children}</div>
+  </motion.div>
+);
 
 export default function CandidateSettings() {
   const navigate = useNavigate();
   const { user, logout, theme, toggleTheme } = useAppStore();
-  const [notifications, setNotifications] = useState({
-    jobAlerts: true,
-    appUpdates: true,
-    messages: true,
-  });
+  const [notifications, setNotifications] = useState({ jobAlerts: true, appUpdates: true, messages: true });
 
   const handleLogout = () => {
     logout();
-    toast({
-      title: 'Logged out',
-      description: 'You have been signed out.',
-      variant: 'success',
-    });
+    toast({ title: 'Logged out', description: 'You have been signed out.', variant: 'success' });
     navigate('/');
   };
 
   return (
-    <div className='p-4 sm:p-6 max-w-lg mx-auto'>
-      <div className='mb-5'>
-        <h1
-          className='text-xl font-extrabold text-gray-900 dark:text-[#F0EFEA] mb-0.5'
-          style={{ fontFamily: 'Plus Jakarta Sans' }}
-        >
-          Settings
-        </h1>
-        <p className='text-sm text-gray-500 dark:text-gray-400'>
-          Manage your account and preferences
-        </p>
-      </div>
+    <div className="min-h-screen bg-gray-50 dark:bg-[#13161a]">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 py-6 lg:py-8">
 
-      {/* Account */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`${card} mb-4`}
-      >
-        <div className={cardHeader}>
-          <Settings className='w-4 h-4 text-[#F7A607]' />
-          <p className={cardTitle}>Account</p>
+        <div className="mb-6">
+          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-[#F0EFEA]" style={{ fontFamily: 'Plus Jakarta Sans' }}>
+            Settings
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Manage your account and preferences</p>
         </div>
-        <div className={divider}>
-          <div
-            className={`flex items-center justify-between px-4 py-3.5 ${rowHover}`}
-          >
-            <div>
-              <p
-                className={`text-sm font-semibold text-gray-900 dark:text-[#F0EFEA]`}
-              >
-                {user?.name}
-              </p>
-              <p className={rowSub}>Registered candidate</p>
-            </div>
-            <button
-              onClick={() => navigate('/candidate/profile')}
-              className='text-xs font-semibold text-[#F7A607] hover:underline flex items-center gap-0.5'
-            >
-              View profile <ChevronRight className='w-3.5 h-3.5' />
-            </button>
-          </div>
-          <div
-            className={`flex items-center justify-between px-4 py-3.5 ${rowHover}`}
-          >
-            <div>
-              <p className={rowText}>Appearance</p>
-              <p className={rowSub}>
-                {theme === 'dark' ? 'Dark mode is on' : 'Light mode is on'}
-              </p>
-            </div>
-            <button
-              onClick={toggleTheme}
-              className={`w-11 h-6 rounded-full relative transition-colors ${theme === 'dark' ? 'bg-[#F7A607]' : 'bg-gray-200 dark:bg-white/20'}`}
-            >
-              <span
-                className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${theme === 'dark' ? 'left-[22px]' : 'left-0.5'}`}
-              />
-            </button>
-          </div>
-        </div>
-      </motion.div>
 
-      {/* Notifications */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.05 }}
-        className={`${card} mb-4`}
-      >
-        <div className={cardHeader}>
-          <Bell className='w-4 h-4 text-[#F7A607]' />
-          <p className={cardTitle}>Notifications</p>
-        </div>
-        <div className={divider}>
-          {[
-            {
-              key: 'jobAlerts',
-              label: 'New Job Alerts',
-              desc: 'Get notified when new jobs match your preference',
-            },
-            {
-              key: 'appUpdates',
-              label: 'Application Updates',
-              desc: 'Status changes on your applications',
-            },
-            {
-              key: 'messages',
-              label: 'Messages',
-              desc: 'New messages from employers or Ex-Serviceman Jobs',
-            },
-          ].map(({ key, label, desc }) => (
-            <div
-              key={key}
-              className={`flex items-center justify-between px-4 py-3.5 gap-3 ${rowHover}`}
-            >
-              <div className='flex-1 min-w-0'>
-                <p
-                  className={`text-sm font-medium text-gray-900 dark:text-[#F0EFEA]`}
-                >
-                  {label}
-                </p>
-                <p className={rowSub}>{desc}</p>
+        <div className="grid lg:grid-cols-3 gap-6">
+
+          {/* Left nav — desktop quick links */}
+          <div className="hidden lg:block">
+            <div className="bg-white dark:bg-[#1e2227] border border-gray-100 dark:border-white/8 rounded-2xl shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-50 dark:border-white/8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#F7A607] flex items-center justify-center font-extrabold text-white text-sm">
+                    {user?.name?.split(' ').map(n => n[0]).join('').slice(0,2) ?? 'C'}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-gray-900 dark:text-[#F0EFEA] truncate">{user?.name}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Registered Candidate</p>
+                  </div>
+                </div>
               </div>
-              <button
-                onClick={() =>
-                  setNotifications((p) => ({
-                    ...p,
-                    [key]: !p[key as keyof typeof p],
-                  }))
-                }
-                className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${notifications[key as keyof typeof notifications] ? 'bg-[#F7A607]' : 'bg-gray-200 dark:bg-white/15'}`}
-              >
-                <span
-                  className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${notifications[key as keyof typeof notifications] ? 'left-[22px]' : 'left-0.5'}`}
-                />
-              </button>
+              <div className="p-3">
+                {[
+                  { label: 'Account',          icon: Settings, href: '#account'  },
+                  { label: 'Notifications',    icon: Bell,     href: '#notif'    },
+                  { label: 'Privacy & Security', icon: Shield, href: '#privacy'  },
+                  { label: 'My Profile',       icon: User,     path: '/candidate/profile' },
+                  { label: 'Career Guide',     icon: HelpCircle, path: '/candidate/career-guide' },
+                ].map(({ label, icon: Icon, path }) => (
+                  <button key={label} onClick={() => path && navigate(path)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-white/5 transition-colors text-left"
+                  >
+                    <Icon className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-gray-300 ml-auto" />
+                  </button>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
-      </motion.div>
+          </div>
 
-      {/* Privacy */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className={`${card} mb-4`}
-      >
-        <div className={cardHeader}>
-          <Shield className='w-4 h-4 text-[#F7A607]' />
-          <p className={cardTitle}>Privacy &amp; Security</p>
-        </div>
-        <div className={divider}>
-          <button
-            className={`w-full flex items-center justify-between px-4 py-3.5 ${rowHover} text-left`}
-          >
-            <p className={rowText}>Privacy Policy</p>
-            <ChevronRight className='w-4 h-4 text-gray-400 dark:text-gray-500' />
-          </button>
-          <button
-            className={`w-full flex items-center justify-between px-4 py-3.5 ${rowHover} text-left`}
-          >
-            <p className={rowText}>Terms of Service</p>
-            <ChevronRight className='w-4 h-4 text-gray-400 dark:text-gray-500' />
-          </button>
-        </div>
-      </motion.div>
+          {/* Settings content */}
+          <div className="lg:col-span-2 space-y-4">
 
-      {/* Logout */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15 }}
-      >
-        <button
-          onClick={handleLogout}
-          className='w-full flex items-center justify-center gap-2 h-12 rounded-2xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/15 text-red-600 dark:text-red-400 text-sm font-semibold hover:bg-red-100 dark:hover:bg-red-900/25 transition-colors'
-        >
-          <LogOut className='w-4 h-4' />
-          Sign Out
-        </button>
-      </motion.div>
+            {/* Account */}
+            <SectionCard title="Account" icon={Settings}>
+              <SettingRow
+                label={user?.name ?? 'Candidate'}
+                sub="Registered candidate"
+                action={
+                  <button onClick={() => navigate('/candidate/profile')}
+                    className="text-xs font-semibold text-[#F7A607] hover:underline flex items-center gap-0.5"
+                  >
+                    View profile <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                }
+              />
+              <SettingRow
+                label="Appearance"
+                sub={theme === 'dark' ? 'Dark mode is on' : 'Light mode is on'}
+                action={
+                  <div className="flex items-center gap-2">
+                    <Sun className="w-3.5 h-3.5 text-gray-400" />
+                    <Toggle on={theme === 'dark'} onToggle={toggleTheme} />
+                    <Moon className="w-3.5 h-3.5 text-gray-400" />
+                  </div>
+                }
+              />
+            </SectionCard>
 
-      <p className='text-center text-xs text-gray-400 dark:text-gray-600 mt-4'>
-        Ex-Serviceman Jobs v1.0 · Candidate Portal
-      </p>
+            {/* Notifications */}
+            <SectionCard title="Notifications" icon={Bell}>
+              {[
+                { key: 'jobAlerts',  label: 'New Job Alerts',       desc: 'When new jobs match your preference' },
+                { key: 'appUpdates', label: 'Application Updates',  desc: 'Status changes on your applications' },
+                { key: 'messages',   label: 'Messages',             desc: 'New messages from employers or coordinators' },
+              ].map(({ key, label, desc }) => (
+                <SettingRow key={key} label={label} sub={desc}
+                  action={
+                    <Toggle
+                      on={notifications[key as keyof typeof notifications]}
+                      onToggle={() => setNotifications(p => ({ ...p, [key]: !p[key as keyof typeof p] }))}
+                    />
+                  }
+                />
+              ))}
+            </SectionCard>
+
+            {/* Privacy */}
+            <SectionCard title="Privacy & Security" icon={Shield}>
+              <SettingRow label="Privacy Policy"   action={<ChevronRight className="w-4 h-4 text-gray-400" />} />
+              <SettingRow label="Terms of Service" action={<ChevronRight className="w-4 h-4 text-gray-400" />} />
+            </SectionCard>
+
+            {/* Sign out */}
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+              <button onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 h-12 rounded-2xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/15 text-red-600 dark:text-red-400 text-sm font-semibold hover:bg-red-100 dark:hover:bg-red-900/25 transition-colors"
+              >
+                <LogOut className="w-4 h-4" /> Sign Out
+              </button>
+              <p className="text-center text-xs text-gray-400 dark:text-gray-600 mt-3">
+                Ex-Serviceman Jobs v1.0 · Candidate Portal
+              </p>
+            </motion.div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
