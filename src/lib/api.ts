@@ -78,25 +78,18 @@ export const createPaymentOrder = () =>
     false,
   )
 
-/* ── Candidate OTP / Auth ────────────────────────────────────────────── */
-export const sendOtp = (mobile: string) =>
-  req(`${API_BASE}/candidates/send-otp`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ mobile }),
-  })
-
-export const verifyOtp = (mobile: string, otp: string) =>
-  req<{ success: boolean; exists: boolean; candidate?: any; accessToken?: string }>(
-    `${API_BASE}/candidates/verify-otp`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobile, otp }) },
+/* ── Candidate Auth ──────────────────────────────────────────────────── */
+export const candidateCreateAccount = (email: string, password: string) =>
+  req<{ success: boolean; candidate: any; accessToken: string }>(
+    `${API_BASE}/candidates/create-account`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) },
+    false,
   )
 
-// Called after MSG91 widget confirms OTP — issues our JWT without re-verifying OTP
-export const widgetLogin = (mobile: string) =>
-  req<{ success: boolean; exists: boolean; candidate?: any; accessToken?: string }>(
-    `${API_BASE}/candidates/widget-login`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobile }) },
+export const candidateLogin = (email: string, password: string) =>
+  req<{ success: boolean; candidate: any; accessToken: string }>(
+    `${API_BASE}/candidates/login`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) },
     false,
   )
 

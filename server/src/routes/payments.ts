@@ -4,8 +4,8 @@ import { env } from '../lib/env'
 
 const router = Router()
 
-// Fixed at ₹1 (100 paise) for testing — replace with dynamic amount once live
-const TEST_AMOUNT_PAISE = 100
+// ₹100 registration fee (10000 paise)
+const REGISTRATION_FEE_PAISE = 10000
 
 /* ── POST /api/payments/create-order ────────────────────────────────── */
 router.post('/create-order', async (_req: Request, res: Response) => {
@@ -17,11 +17,11 @@ router.post('/create-order', async (_req: Request, res: Response) => {
   try {
     const rp    = getRazorpay()
     const order = await rp.orders.create({
-      amount:   TEST_AMOUNT_PAISE,
+      amount:   REGISTRATION_FEE_PAISE,
       currency: 'INR',
       receipt:  `ats_${Date.now()}`,
     })
-    return res.json({ orderId: order.id, amount: TEST_AMOUNT_PAISE, currency: 'INR' })
+    return res.json({ orderId: order.id, amount: REGISTRATION_FEE_PAISE, currency: 'INR' })
   } catch (e: any) {
     console.error('[payments/create-order]', e)
     return res.status(500).json({ error: 'Failed to create payment order', detail: e.message })

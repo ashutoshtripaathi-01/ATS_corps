@@ -3,15 +3,15 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
+import bcrypt from 'bcryptjs'
 import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
 import { pool } from '../db'
 import { signAccessToken, issueRefreshToken } from '../lib/tokens'
 import { requireAuth } from '../middleware/auth'
-import { body, mobile as mobileSchema, otp as otpSchema } from '../lib/validate'
+import { body, mobile as mobileSchema } from '../lib/validate'
 import { audit, A } from '../lib/audit'
 import { verifySignature } from '../lib/razorpay'
-import { isSmsEnabled, sendOtpSms } from '../lib/msg91'
 import { env } from '../lib/env'
 
 const router = Router()
@@ -68,109 +68,62 @@ const upload = multer({
   },
 })
 
-/* ── OTP rate limiter: 5 per 15 min per IP ──────────────────────────── */
-const otpLimiter = rateLimit({
+/* ── Auth rate limiter: 10 per 15 min per IP ────────────────────────── */
+const authLimiter = rateLimit({
   windowMs:        15 * 60 * 1000,
-  max:             5,
+  max:             10,
   standardHeaders: true,
   legacyHeaders:   false,
-  message: { error: 'Too many OTP requests. Please try again in 15 minutes.' },
+  message: { error: 'Too many attempts. Please try again in 15 minutes.' },
 })
 
-/* ── GET /get-user ──────────────────────────────────────────────────── */
-// MSG91 widget calls this before sending OTP to check if the user exists.
-// Identifier arrives with country code prefix (e.g. "919876543210") — strip it.
-router.get('/get-user', async (req: Request, res: Response) => {
-  const raw = String(req.query.identifier ?? '')
-  const mobile = raw.replace(/\D/g, '').slice(-10)
-  if (mobile.length !== 10) return res.status(400).json({ message: 'invalid identifier' })
-
-  const result = await pool.query('SELECT id FROM candidates WHERE mobile=$1', [mobile])
-  return res.json({
-    user_found: result.rows.length > 0,
-    identifier: raw,
-  })
+const emailPasswordSchema = z.object({
+  email:    z.string().email('Enter a valid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
 })
 
-/* ── POST /widget-login ─────────────────────────────────────────────── */
-// Called by the frontend after MSG91 widget confirms OTP is verified.
-// We trust the widget's verified callback and issue our own JWT.
-router.post('/widget-login', async (req: Request, res: Response) => {
-  const parse = z.object({ mobile: mobileSchema }).safeParse(req.body)
-  if (!parse.success) return res.status(400).json({ error: 'Invalid mobile number' })
+/* ── POST /create-account ───────────────────────────────────────────── */
+router.post('/create-account', authLimiter, body(emailPasswordSchema), async (req: Request, res: Response) => {
+  const { email, password } = req.body as z.infer<typeof emailPasswordSchema>
+  const normalEmail = email.toLowerCase()
 
-  const { mobile } = parse.data
-  const cand = await pool.query('SELECT * FROM candidates WHERE mobile=$1', [mobile])
+  const existing = await pool.query('SELECT id FROM candidates WHERE email=$1', [normalEmail])
+  if (existing.rows.length > 0)
+    return res.status(409).json({ error: 'An account with this email already exists' })
 
-  if (cand.rows.length > 0) {
-    const c = cand.rows[0]
-    const accessToken = signAccessToken({ id: String(c.id), role: 'candidate' })
-    await issueRefreshToken(res, String(c.id), 'candidate')
-    audit(A.LOGIN_SUCCESS, { userId: String(c.id), req, metadata: { via: 'msg91-widget' } })
-    return res.json({ success: true, exists: true, candidate: c, accessToken })
-  }
-
-  return res.json({ success: true, exists: false })
-})
-
-/* ── Request schemas ─────────────────────────────────────────────────── */
-const sendOtpSchema   = z.object({ mobile: mobileSchema })
-const verifyOtpSchema = z.object({ mobile: mobileSchema, otp: otpSchema })
-
-/* ── POST /send-otp ─────────────────────────────────────────────────── */
-router.post('/send-otp', otpLimiter, body(sendOtpSchema), async (req: Request, res: Response) => {
-  const { mobile } = req.body as z.infer<typeof sendOtpSchema>
-  // Cryptographically-secure 6-digit code (100000–999999).
-  const otp     = String(crypto.randomInt(100_000, 1_000_000))
-  const expires = new Date(Date.now() + 10 * 60 * 1000)
-
-  await pool.query(
-    'INSERT INTO otps (mobile, otp_code, expires_at) VALUES ($1,$2,$3)',
-    [mobile, otp, expires],
+  const passwordHash = await bcrypt.hash(password, 12)
+  const result = await pool.query(
+    'INSERT INTO candidates (email, password_hash) VALUES ($1,$2) RETURNING *',
+    [normalEmail, passwordHash],
   )
 
-  // Deliver via MSG91 when configured; otherwise fall back to demo mode.
-  if (isSmsEnabled()) {
-    try {
-      await sendOtpSms(mobile, otp)
-    } catch (e: any) {
-      console.error('[OTP] MSG91 send failed:', e.message)
-      return res.status(502).json({ error: 'Could not send OTP. Please try again.' })
-    }
-    return res.json({ success: true })
-  }
+  const c           = result.rows[0]
+  const accessToken = signAccessToken({ id: String(c.id), role: 'candidate' })
+  await issueRefreshToken(res, String(c.id), 'candidate')
+  audit(A.CANDIDATE_REGISTERED, { userId: String(c.id), req, metadata: { email: normalEmail } })
 
-  // Dev/demo fallback — never leak the OTP once SMS is live.
-  console.log(`[OTP] ${mobile} → ${otp} (SMS disabled — demo mode)`)
-  return res.json({ success: true, demo_otp: otp })
+  return res.status(201).json({ success: true, candidate: c, accessToken })
 })
 
-/* ── POST /verify-otp ───────────────────────────────────────────────── */
-router.post('/verify-otp', otpLimiter, body(verifyOtpSchema), async (req: Request, res: Response) => {
-  const { mobile, otp } = req.body as z.infer<typeof verifyOtpSchema>
+/* ── POST /login ────────────────────────────────────────────────────── */
+router.post('/login', authLimiter, body(emailPasswordSchema), async (req: Request, res: Response) => {
+  const { email, password } = req.body as z.infer<typeof emailPasswordSchema>
+  const normalEmail = email.toLowerCase()
 
-  const row = await pool.query(
-    `SELECT * FROM otps
-     WHERE mobile=$1 AND otp_code=$2 AND used=FALSE AND expires_at > NOW()
-     ORDER BY created_at DESC LIMIT 1`,
-    [mobile, otp],
-  )
+  const result = await pool.query('SELECT * FROM candidates WHERE email=$1', [normalEmail])
+  if (result.rows.length === 0 || !result.rows[0].password_hash)
+    return res.status(401).json({ error: 'Invalid email or password' })
 
-  if (row.rows.length === 0)
-    return res.status(400).json({ error: 'Invalid or expired OTP' })
+  const c     = result.rows[0]
+  const valid = await bcrypt.compare(password, c.password_hash)
+  if (!valid)
+    return res.status(401).json({ error: 'Invalid email or password' })
 
-  await pool.query('UPDATE otps SET used=TRUE WHERE id=$1', [row.rows[0].id])
+  const accessToken = signAccessToken({ id: String(c.id), role: 'candidate' })
+  await issueRefreshToken(res, String(c.id), 'candidate')
+  audit(A.LOGIN_SUCCESS, { userId: String(c.id), req, metadata: { via: 'email-password' } })
 
-  const cand = await pool.query('SELECT * FROM candidates WHERE mobile=$1', [mobile])
-  if (cand.rows.length > 0) {
-    const c           = cand.rows[0]
-    const accessToken = signAccessToken({ id: String(c.id), role: 'candidate' })
-    await issueRefreshToken(res, String(c.id), 'candidate')
-    audit(A.LOGIN_SUCCESS, { userId: String(c.id), req, metadata: { via: 'otp' } })
-    return res.json({ success: true, exists: true, candidate: c, accessToken })
-  }
-
-  return res.json({ success: true, exists: false })
+  return res.json({ success: true, candidate: c, accessToken })
 })
 
 /* ── POST /register ─────────────────────────────────────────────────── */
@@ -180,7 +133,7 @@ const uploadFields = upload.fields([
   { name: 'policeVerification', maxCount: 1 },
 ])
 
-router.post('/register', (req: Request, res: Response) => {
+router.post('/register', requireAuth('candidate'), (req: Request, res: Response) => {
   uploadFields(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File too large — maximum 10 MB' : err.message
@@ -189,6 +142,8 @@ router.post('/register', (req: Request, res: Response) => {
     if (err) return res.status(400).json({ error: (err as Error).message })
 
     try {
+      const candidateId = req.auth!.id
+
       const {
         mobile, force, rank, fullName, unit, retirementDate,
         post, otherPost, gunLicense, loc1, loc2, loc3, applicationFee,
@@ -228,30 +183,26 @@ router.post('/register', (req: Request, res: Response) => {
       const policeVerifPath   = files?.policeVerification?.[0]?.filename ?? null
 
       const result = await pool.query(
-        `INSERT INTO candidates (
-           full_name, mobile, force, rank, unit, retirement_date,
-           post, other_post, gun_license, loc1, loc2, loc3,
-           application_fee, payment_status,
-           id_card_path, discharge_book_path, police_verification_path
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-         ON CONFLICT (mobile) DO UPDATE SET
-           full_name                = EXCLUDED.full_name,
-           force                    = EXCLUDED.force,
-           rank                     = EXCLUDED.rank,
-           unit                     = EXCLUDED.unit,
-           retirement_date          = EXCLUDED.retirement_date,
-           post                     = EXCLUDED.post,
-           other_post               = EXCLUDED.other_post,
-           gun_license              = EXCLUDED.gun_license,
-           loc1                     = EXCLUDED.loc1,
-           loc2                     = EXCLUDED.loc2,
-           loc3                     = EXCLUDED.loc3,
-           application_fee          = EXCLUDED.application_fee,
-           payment_status           = EXCLUDED.payment_status,
-           id_card_path             = COALESCE(EXCLUDED.id_card_path, candidates.id_card_path),
-           discharge_book_path      = COALESCE(EXCLUDED.discharge_book_path, candidates.discharge_book_path),
-           police_verification_path = COALESCE(EXCLUDED.police_verification_path, candidates.police_verification_path),
+        `UPDATE candidates SET
+           full_name                = $1,
+           mobile                   = $2,
+           force                    = $3,
+           rank                     = $4,
+           unit                     = $5,
+           retirement_date          = $6,
+           post                     = $7,
+           other_post               = $8,
+           gun_license              = $9,
+           loc1                     = $10,
+           loc2                     = $11,
+           loc3                     = $12,
+           application_fee          = $13,
+           payment_status           = $14,
+           id_card_path             = COALESCE($15, id_card_path),
+           discharge_book_path      = COALESCE($16, discharge_book_path),
+           police_verification_path = COALESCE($17, police_verification_path),
            updated_at               = NOW()
+         WHERE id = $18
          RETURNING *`,
         [
           fullName, mobile, force, rank, unit, retirementDate,
@@ -259,6 +210,7 @@ router.post('/register', (req: Request, res: Response) => {
           loc1, loc2 || null, loc3 || null,
           applicationFee ? Number(applicationFee) : 0, paymentStatus,
           idCardPath, dischargeBookPath, policeVerifPath,
+          candidateId,
         ],
       )
 

@@ -647,9 +647,7 @@ export default function Landing() {
             <div className='relative z-10 flex flex-col md:flex-row items-center gap-8'>
               {/* Badge */}
               <div className='shrink-0 flex flex-col items-center'>
-                <div className='w-24 h-24 rounded-2xl bg-[#F7A607] flex items-center justify-center shadow-xl shadow-[#F7A607]/30 mb-3'>
-                  <Shield className='w-12 h-12 text-white' />
-                </div>
+                <img src='/DGR.png' alt='DGR — Directorate General of Resettlement' className='w-36 h-36 object-contain mb-3 drop-shadow-xl' />
                 <span className='text-xs font-bold text-[#F7A607] uppercase tracking-wider text-center'>
                   Govt. of India
                 </span>
@@ -941,9 +939,9 @@ export default function Landing() {
       {/* ══════════════════════════════════════════
           STATS
       ══════════════════════════════════════════ */}
-      <section className='py-16 bg-[#F7A607]'>
+      <section className='py-16 bg-[#1a1d1f] border-t border-white/5'>
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
-          <div className='grid grid-cols-2 lg:grid-cols-4 gap-8'>
+          <div className='grid grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-10'>
             {STATS.map(({ value, suffix, label, sub, icon: Icon }, i) => (
               <motion.div
                 key={label}
@@ -953,17 +951,17 @@ export default function Landing() {
                 transition={{ duration: 0.45, delay: i * 0.1 }}
                 className='flex flex-col items-center text-center'
               >
-                <div className='w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-4'>
-                  <Icon className='w-6 h-6 text-white' />
+                <div className='w-11 h-11 rounded-2xl bg-[#F7A607]/12 border border-[#F7A607]/20 flex items-center justify-center mb-4'>
+                  <Icon className='w-5 h-5 text-[#F7A607]' />
                 </div>
                 <p
-                  className='text-4xl font-extrabold text-white mb-1'
+                  className='text-4xl font-extrabold text-[#F7A607] mb-1'
                   style={{ fontFamily: 'Plus Jakarta Sans' }}
                 >
                   <AnimatedCounter end={value} suffix={suffix} />
                 </p>
                 <p className='font-semibold text-white text-sm'>{label}</p>
-                <p className='text-white/70 text-xs mt-0.5'>{sub}</p>
+                <p className='text-gray-500 text-xs mt-0.5'>{sub}</p>
               </motion.div>
             ))}
           </div>

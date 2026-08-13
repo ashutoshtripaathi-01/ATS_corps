@@ -16,16 +16,18 @@ export async function initDb() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS candidates (
         id                       SERIAL PRIMARY KEY,
-        full_name                VARCHAR(255)  NOT NULL,
-        mobile                   VARCHAR(15)   NOT NULL UNIQUE,
-        force                    VARCHAR(50)   NOT NULL,
-        rank                     VARCHAR(100)  NOT NULL,
-        unit                     VARCHAR(255)  NOT NULL,
-        retirement_date          DATE          NOT NULL,
-        post                     VARCHAR(100)  NOT NULL,
+        email                    VARCHAR(255)  UNIQUE,
+        password_hash            TEXT,
+        full_name                VARCHAR(255),
+        mobile                   VARCHAR(15)   UNIQUE,
+        force                    VARCHAR(50),
+        rank                     VARCHAR(100),
+        unit                     VARCHAR(255),
+        retirement_date          DATE,
+        post                     VARCHAR(100),
         other_post               VARCHAR(255),
         gun_license              VARCHAR(100),
-        loc1                     VARCHAR(100)  NOT NULL,
+        loc1                     VARCHAR(100),
         loc2                     VARCHAR(100),
         loc3                     VARCHAR(100),
         application_fee          INTEGER       DEFAULT 0,
@@ -114,6 +116,19 @@ export async function initDb() {
         metadata    TEXT,
         created_at  TIMESTAMPTZ   DEFAULT NOW()
       );
+
+      -- Phase 2 migration: email/password auth for candidates
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email         VARCHAR(255);
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS password_hash TEXT;
+      ALTER TABLE candidates ALTER COLUMN mobile          DROP NOT NULL;
+      ALTER TABLE candidates ALTER COLUMN full_name       DROP NOT NULL;
+      ALTER TABLE candidates ALTER COLUMN force           DROP NOT NULL;
+      ALTER TABLE candidates ALTER COLUMN rank            DROP NOT NULL;
+      ALTER TABLE candidates ALTER COLUMN unit            DROP NOT NULL;
+      ALTER TABLE candidates ALTER COLUMN retirement_date DROP NOT NULL;
+      ALTER TABLE candidates ALTER COLUMN post            DROP NOT NULL;
+      ALTER TABLE candidates ALTER COLUMN loc1            DROP NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS candidates_email_key ON candidates(email) WHERE email IS NOT NULL;
 
       CREATE INDEX IF NOT EXISTS idx_jobs_employer      ON jobs(employer_id);
       CREATE INDEX IF NOT EXISTS idx_jobs_status        ON jobs(status);
