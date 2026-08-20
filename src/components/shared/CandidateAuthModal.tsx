@@ -139,27 +139,13 @@ export function CandidateAuthModal({
     setShowConf(false);
   };
 
-  const handleDevSkip = () => {
-    setToken('dev-bypass-token');
-    setUser({
-      id:        'dev-001',
-      name:      'Dev Candidate',
-      email:     'dev@bypass.local',
-      role:      'candidate',
-      avatar:    `https://api.dicebear.com/7.x/avataaars/svg?seed=dev`,
-      createdAt: new Date(),
-    });
-    onClose();
-    navigate('/candidate/dashboard');
-  };
-
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       {/*
         Mobile  → max-w-[440px] single-column card
         Desktop → max-w-[940px] two-column split layout
       */}
-      <DialogContent className='max-w-[440px] lg:max-w-[940px] w-full p-0 overflow-hidden border-0 shadow-2xl rounded-3xl [&>button:last-child]:hidden'>
+      <DialogContent className='max-w-[440px] lg:max-w-[940px] w-full p-0 overflow-hidden border-0 shadow-2xl rounded-3xl [&>button:last-child]:hidden h-[min(680px,calc(100vh-2rem))]'>
         <div className='flex h-full'>
 
           {/* ══════════════════════════════════════════════════════════════
@@ -561,19 +547,6 @@ export function CandidateAuthModal({
                         </>
                       )}
                     </div>
-
-                    {/* Dev bypass — only visible in development */}
-                    {import.meta.env.DEV && (
-                      <div className='mt-4 text-center'>
-                        <button
-                          type='button'
-                          onClick={handleDevSkip}
-                          className='text-xs text-gray-400 hover:text-[#F7A607] transition-colors underline underline-offset-2'
-                        >
-                          Skip for now (dev mode)
-                        </button>
-                      </div>
-                    )}
 
                     {/* Desktop trust strip */}
                     <div className='hidden lg:flex items-center gap-2 mt-6 pt-5 border-t border-gray-100'>

@@ -21,7 +21,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/useAppStore';
 import { toast } from '@/hooks/useToast';
-import { createPaymentOrder, registerCandidate, devBypass } from '@/lib/api';
+import { createPaymentOrder, registerCandidate } from '@/lib/api';
 import { setToken } from '@/lib/tokenStore';
 import companyLogo from '@/assets/company logo.png';
 
@@ -137,24 +137,6 @@ export default function CandidatePayment() {
         toast({ title: 'Payment failed', description: err.message, variant: 'error' });
         setScreen('pay');
       }
-    }
-  };
-
-  const handleDevSkip = async () => {
-    try {
-      const result = await devBypass();
-      setToken(result.accessToken);
-      setUser({
-        id: String(result.candidate.id),
-        name: result.candidate.full_name,
-        email: `${result.candidate.mobile}@candidate.ats`,
-        role: 'candidate',
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${result.candidate.full_name}`,
-        createdAt: new Date(),
-      });
-      navigate('/candidate/dashboard');
-    } catch (err: any) {
-      toast({ title: 'Dev bypass failed', description: err.message, variant: 'error' });
     }
   };
 
@@ -299,7 +281,7 @@ export default function CandidatePayment() {
       PAY / PROCESSING SCREEN — split-screen on desktop
   ══════════════════════════════════════════════════════════ */
   return (
-    <div className='min-h-screen flex flex-col lg:flex-row'>
+    <div className='min-h-screen lg:h-screen flex flex-col lg:flex-row overflow-hidden'>
 
       {/* ══════════════════════════════════════════════════════════
           LEFT PANEL — dark order summary (desktop) / top header (mobile)
@@ -387,7 +369,7 @@ export default function CandidatePayment() {
       {/* ══════════════════════════════════════════════════════════
           RIGHT PANEL — payment action
       ══════════════════════════════════════════════════════════ */}
-      <div className='flex-1 bg-gray-50 flex flex-col'>
+      <div className='flex-1 bg-gray-50 flex flex-col lg:overflow-y-auto'>
 
         {/* Desktop header with back button */}
         <div className='hidden lg:flex items-center gap-3 px-10 py-5 bg-white border-b border-gray-100'>
@@ -493,15 +475,6 @@ export default function CandidatePayment() {
                     </div>
                   </div>
 
-                  {import.meta.env.DEV && (
-                    <div className='text-center pt-1'>
-                      <button type='button' onClick={handleDevSkip}
-                        className='text-xs text-gray-400 hover:text-[#F7A607] transition-colors underline underline-offset-2'
-                      >
-                        Skip for now (dev mode)
-                      </button>
-                    </div>
-                  )}
                 </div>
 
                 {/* Razorpay badge */}

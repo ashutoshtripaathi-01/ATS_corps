@@ -4,8 +4,8 @@ import { env } from '../lib/env'
 
 const router = Router()
 
-// ₹100 registration fee (10000 paise)
-const REGISTRATION_FEE_PAISE = 10000
+// ₹1 registration fee for live testing (100 paise — Razorpay minimum)
+const REGISTRATION_FEE_PAISE = 100
 
 /* ── POST /api/payments/create-order ────────────────────────────────── */
 router.post('/create-order', async (_req: Request, res: Response) => {

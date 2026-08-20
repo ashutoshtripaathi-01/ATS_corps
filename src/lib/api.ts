@@ -63,12 +63,6 @@ export const refreshToken = () => doRefresh()
 export const logoutApi = () =>
   fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {})
 
-export const devBypass = () =>
-  req<{ accessToken: string; candidate: any; _devBypass: true }>(
-    `${API_BASE}/auth/dev-bypass`,
-    { method: 'POST' },
-    false,
-  )
 
 /* ── Payments ────────────────────────────────────────────────────────── */
 export const createPaymentOrder = () =>
@@ -110,6 +104,20 @@ export const getAdminCandidates = () =>
   req(`${API_BASE}/candidates/admin/all`)
 
 /* ── Employers ──────────────────────────────────────────────────────── */
+export const employerCreateAccount = (email: string, password: string) =>
+  req<{ success: boolean; employer: any; accessToken: string }>(
+    `${API_BASE}/employers/create-account`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) },
+    false,
+  )
+
+export const employerLogin = (email: string, password: string) =>
+  req<{ success: boolean; employer: any; accessToken: string }>(
+    `${API_BASE}/employers/login`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) },
+    false,
+  )
+
 export const registerEmployer = (data: Record<string, string>) =>
   req<{ success: boolean; employer: any; accessToken: string }>(
     `${API_BASE}/employers/register`,

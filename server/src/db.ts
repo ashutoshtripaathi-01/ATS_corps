@@ -117,6 +117,9 @@ export async function initDb() {
         created_at  TIMESTAMPTZ   DEFAULT NOW()
       );
 
+      -- Phase 2 migration: email/password auth for employers
+      ALTER TABLE employers ADD COLUMN IF NOT EXISTS password_hash TEXT;
+
       -- Phase 2 migration: email/password auth for candidates
       ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email         VARCHAR(255);
       ALTER TABLE candidates ADD COLUMN IF NOT EXISTS password_hash TEXT;

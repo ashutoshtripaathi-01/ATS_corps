@@ -50,7 +50,7 @@ const RANKS: Record<Force, string[]> = {
 const POSTS    = ['Any', 'Guard Unarmed', 'Gunman', 'Security Supervisor', 'Other'] as const;
 const LOCATIONS = ['Upper Assam', 'Guwahati & Around', 'Lower Assam'] as const;
 const LOCATION_FEES: Record<string, number> = {
-  'Upper Assam': 100, 'Guwahati & Around': 100, 'Lower Assam': 100,
+  'Upper Assam': 1, 'Guwahati & Around': 1, 'Lower Assam': 1,
 };
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -552,7 +552,7 @@ export default function CandidateRegister() {
   const goBack = () => { if (step > 1) { setStep((s) => s - 1); window.scrollTo(0, 0); } else navigate('/'); };
 
   return (
-    <div className='min-h-screen bg-gray-50 flex flex-col lg:flex-row'>
+    <div className='min-h-screen lg:h-screen bg-gray-50 flex flex-col lg:flex-row overflow-hidden'>
 
       {/* ══════════════════════════════════════════════════════════
           LEFT SIDEBAR — desktop only
@@ -634,7 +634,7 @@ export default function CandidateRegister() {
       {/* ══════════════════════════════════════════════════════════
           MAIN CONTENT — full width on mobile, flex-1 on desktop
       ══════════════════════════════════════════════════════════ */}
-      <div className='flex-1 flex flex-col min-w-0'>
+      <div className='flex-1 flex flex-col min-w-0 lg:overflow-hidden'>
 
         {/* ── Sticky header ── */}
         <div className='sticky top-0 z-40 bg-white border-b border-gray-100'>
@@ -693,7 +693,7 @@ export default function CandidateRegister() {
         </div>
 
         {/* ── Form content ── */}
-        <div className='flex-1 overflow-y-auto pb-28 lg:pb-12'>
+        <div className='flex-1 overflow-y-auto pb-28 lg:pb-6'>
           <div className='px-4 lg:px-8 xl:px-12 max-w-3xl lg:max-w-none mx-auto'>
             <AnimatePresence mode='wait'>
               <motion.div key={step}
