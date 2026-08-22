@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/useAppStore';
 import { toast } from '@/hooks/useToast';
 import { BRAND } from '@/constants';
+import { saveProfile } from '@/lib/api';
 import companyLogo from '@/assets/company logo.png';
 
 /* ─── Data ───────────────────────────────────────────────────────────────── */
@@ -419,8 +420,8 @@ function PostLocationStep({ data, update, errors }: {
 }
 
 /* ─── Step 4: Confirm & Proceed ───────────────────────────────────────────── */
-function PaymentStep({ data, onProceed, onGoBack }: {
-  data: FormState; onProceed: () => void; onGoBack: () => void;
+function PaymentStep({ data, onProceed, onGoBack, saving }: {
+  data: FormState; onProceed: () => void; onGoBack: () => void; saving?: boolean;
 }) {
   const fee = LOCATION_FEES[data.loc1] ?? 0;
 
@@ -490,8 +491,11 @@ function PaymentStep({ data, onProceed, onGoBack }: {
         </div>
       </div>
 
-      <Button size='lg' className='w-full lg:max-w-xs rounded-xl text-sm font-bold gap-2.5 h-13' onClick={onProceed}>
-        <CreditCard className='w-4 h-4' /> Proceed to Payment
+      <Button size='lg' className='w-full lg:max-w-xs rounded-xl text-sm font-bold gap-2.5 h-13' onClick={onProceed} disabled={saving}>
+        {saving
+          ? <><div className='w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin' /> Saving…</>
+          : <><CreditCard className='w-4 h-4' /> Proceed to Payment</>
+        }
       </Button>
     </div>
   );
@@ -513,6 +517,7 @@ export default function CandidateRegister() {
   const [step, setStep] = useState(1);
   const [data, setData] = useState<FormState>(INITIAL);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [saving, setSaving] = useState(false);
 
   const update = (k: keyof FormState, v: any) => {
     setData((p) => ({ ...p, [k]: v }));
@@ -704,19 +709,53 @@ export default function CandidateRegister() {
                 {step === 2 && <DocumentsStep    data={data} update={update} errors={errors} />}
                 {step === 3 && <PostLocationStep  data={data} update={update} errors={errors} />}
                 {step === 4 && (
-                  <PaymentStep data={data}
-                    onProceed={() => navigate('/candidate/payment', {
-                      state: {
-                        mobile: data.mobile, fullName: data.fullName, rank: data.rank,
-                        force: data.force, post: data.post, loc1: data.loc1,
-                        loc2: data.loc2, loc3: data.loc3,
-                        applicationFee: LOCATION_FEES[data.loc1] ?? 0,
-                        unit: data.unit, retirementDate: data.retirementDate,
-                        otherPost: data.otherPost, gunLicense: data.gunLicense,
-                        idCard: data.idCard, dischargeBook: data.dischargeBook,
-                        policeVerification: data.policeVerification,
-                      },
-                    })}
+                  <PaymentStep data={data} saving={saving}
+                    onProceed={async () => {
+                      setSaving(true)
+                      try {
+                        const fd = new FormData()
+                        fd.append('mobile',         data.mobile)
+                        fd.append('force',          data.force)
+                        fd.append('rank',           data.rank)
+                        fd.append('fullName',       data.fullName)
+                        fd.append('unit',           data.unit)
+                        fd.append('retirementDate', data.retirementDate)
+                        fd.append('post',           data.post)
+                        if (data.otherPost)   fd.append('otherPost',   data.otherPost)
+                        if (data.gunLicense)  fd.append('gunLicense',  data.gunLicense)
+                        fd.append('loc1',     data.loc1)
+                        if (data.loc2) fd.append('loc2', data.loc2)
+                        if (data.loc3) fd.append('loc3', data.loc3)
+                        fd.append('applicationFee', String(LOCATION_FEES[data.loc1] ?? 0))
+                        if (data.idCard)             fd.append('idCard',             data.idCard)
+                        if (data.dischargeBook)      fd.append('dischargeBook',      data.dischargeBook)
+                        if (data.policeVerification) fd.append('policeVerification', data.policeVerification)
+
+                        await saveProfile(fd)
+
+                        navigate('/candidate/payment', {
+                          state: {
+                            mobile:         data.mobile,
+                            fullName:       data.fullName,
+                            rank:           data.rank,
+                            force:          data.force,
+                            post:           data.post,
+                            loc1:           data.loc1,
+                            loc2:           data.loc2,
+                            loc3:           data.loc3,
+                            applicationFee: LOCATION_FEES[data.loc1] ?? 0,
+                            unit:           data.unit,
+                            retirementDate: data.retirementDate,
+                            otherPost:      data.otherPost,
+                            gunLicense:     data.gunLicense,
+                          },
+                        })
+                      } catch (err: any) {
+                        toast({ title: 'Could not save profile', description: err.message, variant: 'error' })
+                      } finally {
+                        setSaving(false)
+                      }
+                    }}
                     onGoBack={() => { setStep(3); window.scrollTo(0, 0); }}
                   />
                 )}

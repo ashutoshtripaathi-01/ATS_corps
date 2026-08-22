@@ -21,7 +21,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/useAppStore';
 import { toast } from '@/hooks/useToast';
-import { createPaymentOrder, registerCandidate } from '@/lib/api';
+import { createPaymentOrder, verifyPayment } from '@/lib/api';
 import { setToken } from '@/lib/tokenStore';
 import companyLogo from '@/assets/company logo.png';
 
@@ -39,9 +39,6 @@ export interface CandidatePaymentState {
   retirementDate: string;
   otherPost?: string;
   gunLicense?: string;
-  idCard?: File;
-  dischargeBook?: File;
-  policeVerification?: File;
 }
 
 type Screen = 'pay' | 'processing' | 'success';
@@ -130,7 +127,7 @@ export default function CandidatePayment() {
         rzp.open();
       }).then(async (payment) => {
         setScreen('success');
-        await completeRegistration(state, payment);
+        await finalizeRegistration(payment);
       });
     } catch (err: any) {
       if (err?.message !== 'Payment cancelled') {
@@ -140,40 +137,21 @@ export default function CandidatePayment() {
     }
   };
 
-  const completeRegistration = async (
-    s: CandidatePaymentState,
-    payment: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string },
-  ) => {
+  const finalizeRegistration = async (payment: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) => {
+    if (!state) return;
     try {
-      const fd = new FormData();
-      fd.append('mobile', s.mobile);
-      fd.append('force', s.force);
-      fd.append('rank', s.rank);
-      fd.append('fullName', s.fullName);
-      fd.append('unit', s.unit);
-      fd.append('retirementDate', s.retirementDate);
-      fd.append('post', s.post);
-      if (s.otherPost) fd.append('otherPost', s.otherPost);
-      if (s.gunLicense) fd.append('gunLicense', s.gunLicense);
-      fd.append('loc1', s.loc1);
-      if (s.loc2) fd.append('loc2', s.loc2);
-      if (s.loc3) fd.append('loc3', s.loc3);
-      fd.append('applicationFee', String(s.applicationFee));
-      if (s.idCard) fd.append('idCard', s.idCard);
-      if (s.dischargeBook) fd.append('dischargeBook', s.dischargeBook);
-      if (s.policeVerification) fd.append('policeVerification', s.policeVerification);
-      fd.append('razorpay_order_id', payment.razorpay_order_id);
-      fd.append('razorpay_payment_id', payment.razorpay_payment_id);
-      fd.append('razorpay_signature', payment.razorpay_signature);
-
-      const result = await registerCandidate(fd);
+      const result = await verifyPayment(payment);
       if (result.accessToken) setToken(result.accessToken);
       setUser({
         id:        String(result.candidate.id),
-        name:      s.fullName,
-        email:     result.candidate.email || `${s.mobile}@candidate.ats`,
+        name:      state.fullName,
+        email:     result.candidate.email || `${state.mobile}@candidate.ats`,
         role:      'candidate',
-        avatar:    `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.fullName}`,
+        avatar:    `https://api.dicebear.com/7.x/avataaars/svg?seed=${state.fullName}`,
         createdAt: new Date(),
       });
     } catch (err: any) {

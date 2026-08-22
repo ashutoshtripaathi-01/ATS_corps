@@ -133,6 +133,29 @@ export async function initDb() {
       ALTER TABLE candidates ALTER COLUMN loc1            DROP NOT NULL;
       CREATE UNIQUE INDEX IF NOT EXISTS candidates_email_key ON candidates(email) WHERE email IS NOT NULL;
 
+      -- Phase 3 migration: pre-payment registration tracking
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS registration_status VARCHAR(30);
+      UPDATE candidates SET registration_status = 'active'
+        WHERE payment_status IN ('paid', 'dev_bypass') AND registration_status IS NULL;
+      UPDATE candidates SET registration_status = 'pending_payment'
+        WHERE registration_status IS NULL;
+
+      CREATE TABLE IF NOT EXISTS payment_attempts (
+        id                  SERIAL PRIMARY KEY,
+        candidate_id        INTEGER REFERENCES candidates(id) ON DELETE CASCADE,
+        razorpay_order_id   VARCHAR(100) UNIQUE NOT NULL,
+        razorpay_payment_id VARCHAR(100),
+        razorpay_signature  TEXT,
+        amount              INTEGER NOT NULL,
+        currency            VARCHAR(10)  DEFAULT 'INR',
+        status              VARCHAR(20)  DEFAULT 'pending',
+        created_at          TIMESTAMPTZ  DEFAULT NOW(),
+        paid_at             TIMESTAMPTZ
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_pay_attempts_candidate ON payment_attempts(candidate_id);
+      CREATE INDEX IF NOT EXISTS idx_pay_attempts_order     ON payment_attempts(razorpay_order_id);
+
       CREATE INDEX IF NOT EXISTS idx_jobs_employer      ON jobs(employer_id);
       CREATE INDEX IF NOT EXISTS idx_jobs_status        ON jobs(status);
       CREATE INDEX IF NOT EXISTS idx_apps_candidate     ON applications(candidate_id);

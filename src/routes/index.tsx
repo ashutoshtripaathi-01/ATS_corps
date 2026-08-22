@@ -42,6 +42,7 @@ import AdminCompanies from '@/pages/admin/Companies'
 import AdminCandidates from '@/pages/admin/Candidates'
 import AdminJobs from '@/pages/admin/Jobs'
 import AdminSettings from '@/pages/admin/Settings'
+import AdminRegistrations from '@/pages/admin/Registrations'
 
 export const router = createBrowserRouter([
   {
@@ -106,11 +107,12 @@ export const router = createBrowserRouter([
     element: <AuthGuard role="admin"><AdminLayout /></AuthGuard>,
     children: [
       { index: true, element: <Navigate to="/admin/dashboard" replace /> },
-      { path: 'dashboard',  element: <AdminDashboard /> },
-      { path: 'companies',  element: <AdminCompanies /> },
-      { path: 'candidates', element: <AdminCandidates /> },
-      { path: 'jobs',       element: <AdminJobs /> },
-      { path: 'settings',   element: <AdminSettings /> },
+      { path: 'dashboard',     element: <AdminDashboard /> },
+      { path: 'companies',     element: <AdminCompanies /> },
+      { path: 'candidates',    element: <AdminCandidates /> },
+      { path: 'jobs',          element: <AdminJobs /> },
+      { path: 'registrations', element: <AdminRegistrations /> },
+      { path: 'settings',      element: <AdminSettings /> },
     ],
   },
   {

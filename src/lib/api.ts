@@ -69,7 +69,16 @@ export const createPaymentOrder = () =>
   req<{ orderId: string; amount: number; currency: string }>(
     `${API_BASE}/payments/create-order`,
     { method: 'POST' },
-    false,
+  )
+
+export const verifyPayment = (data: {
+  razorpay_order_id: string
+  razorpay_payment_id: string
+  razorpay_signature: string
+}) =>
+  req<{ success: boolean; candidate: any; accessToken: string }>(
+    `${API_BASE}/payments/verify`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) },
   )
 
 /* ── Candidate Auth ──────────────────────────────────────────────────── */
@@ -87,6 +96,12 @@ export const candidateLogin = (email: string, password: string) =>
     false,
   )
 
+export const saveProfile = (formData: FormData) =>
+  req<{ success: boolean; candidateId: number }>(
+    `${API_BASE}/candidates/save-profile`,
+    { method: 'POST', body: formData },
+  )
+
 export const registerCandidate = (formData: FormData) =>
   req<{ success: boolean; candidate: any; accessToken: string }>(
     `${API_BASE}/candidates/register`,
@@ -102,6 +117,16 @@ export const getAdminStats = () =>
 
 export const getAdminCandidates = () =>
   req(`${API_BASE}/candidates/admin/all`)
+
+export const getAdminRegistrations = (params?: Record<string, string>) => {
+  const qs = params ? '?' + new URLSearchParams(params).toString() : ''
+  return req<{
+    registrations: any[]
+    total: number
+    page: number
+    limit: number
+  }>(`${API_BASE}/candidates/admin/registrations${qs}`)
+}
 
 /* ── Employers ──────────────────────────────────────────────────────── */
 export const employerCreateAccount = (email: string, password: string) =>

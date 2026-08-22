@@ -126,15 +126,95 @@ router.post('/login', authLimiter, body(emailPasswordSchema), async (req: Reques
   return res.json({ success: true, candidate: c, accessToken })
 })
 
-/* ── POST /register ─────────────────────────────────────────────────── */
+/* ── POST /save-profile ─────────────────────────────────────────────── */
 const uploadFields = upload.fields([
   { name: 'idCard',             maxCount: 1 },
   { name: 'dischargeBook',      maxCount: 1 },
   { name: 'policeVerification', maxCount: 1 },
 ])
 
-router.post('/register', requireAuth('candidate'), (req: Request, res: Response) => {
+router.post('/save-profile', requireAuth('candidate'), (req: Request, res: Response) => {
   uploadFields(req, res, async (err) => {
+    if (err instanceof multer.MulterError) {
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File too large — maximum 10 MB' : err.message
+      return res.status(400).json({ error: msg })
+    }
+    if (err) return res.status(400).json({ error: (err as Error).message })
+
+    try {
+      const candidateId = req.auth!.id
+      const {
+        mobile, force, rank, fullName, unit, retirementDate,
+        post, otherPost, gunLicense, loc1, loc2, loc3, applicationFee,
+      } = req.body as Record<string, string>
+
+      if (!mobile || !force || !rank || !fullName || !unit || !retirementDate || !post || !loc1)
+        return res.status(400).json({ error: 'Required fields missing' })
+      if (!/^[6-9]\d{9}$/.test(mobile))
+        return res.status(400).json({ error: 'Invalid mobile number' })
+
+      // Check for mobile conflict with another candidate
+      const conflict = await pool.query(
+        'SELECT id FROM candidates WHERE mobile=$1 AND id!=$2',
+        [mobile, candidateId],
+      )
+      if (conflict.rows.length > 0)
+        return res.status(409).json({ error: 'This mobile number is already registered with another account' })
+
+      const files             = req.files as Record<string, Express.Multer.File[]>
+      const idCardPath        = files?.idCard?.[0]?.filename             ?? null
+      const dischargeBookPath = files?.dischargeBook?.[0]?.filename      ?? null
+      const policeVerifPath   = files?.policeVerification?.[0]?.filename ?? null
+
+      await pool.query(
+        `UPDATE candidates SET
+           full_name                = $1,
+           mobile                   = $2,
+           force                    = $3,
+           rank                     = $4,
+           unit                     = $5,
+           retirement_date          = $6,
+           post                     = $7,
+           other_post               = $8,
+           gun_license              = $9,
+           loc1                     = $10,
+           loc2                     = $11,
+           loc3                     = $12,
+           application_fee          = $13,
+           id_card_path             = COALESCE($14, id_card_path),
+           discharge_book_path      = COALESCE($15, discharge_book_path),
+           police_verification_path = COALESCE($16, police_verification_path),
+           updated_at               = NOW()
+         WHERE id = $17`,
+        [
+          fullName, mobile, force, rank, unit, retirementDate,
+          post, otherPost || null, gunLicense || null,
+          loc1, loc2 || null, loc3 || null,
+          applicationFee ? Number(applicationFee) : 0,
+          idCardPath, dischargeBookPath, policeVerifPath,
+          candidateId,
+        ],
+      )
+
+      return res.json({ success: true, candidateId: Number(candidateId) })
+    } catch (e: any) {
+      if (e.code === '23505')
+        return res.status(409).json({ error: 'Mobile number already registered' })
+      console.error('[save-profile]', e)
+      return res.status(500).json({ error: 'Failed to save profile', detail: e.message })
+    }
+  })
+})
+
+/* ── POST /register ─────────────────────────────────────────────────── */
+const uploadFieldsLegacy = upload.fields([
+  { name: 'idCard',             maxCount: 1 },
+  { name: 'dischargeBook',      maxCount: 1 },
+  { name: 'policeVerification', maxCount: 1 },
+])
+
+router.post('/register', requireAuth('candidate'), (req: Request, res: Response) => {
+  uploadFieldsLegacy(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File too large — maximum 10 MB' : err.message
       return res.status(400).json({ error: msg })
@@ -198,6 +278,7 @@ router.post('/register', requireAuth('candidate'), (req: Request, res: Response)
            loc3                     = $12,
            application_fee          = $13,
            payment_status           = $14,
+           registration_status      = CASE WHEN $14 = 'paid' THEN 'active' ELSE registration_status END,
            id_card_path             = COALESCE($15, id_card_path),
            discharge_book_path      = COALESCE($16, discharge_book_path),
            police_verification_path = COALESCE($17, police_verification_path),
@@ -230,19 +311,78 @@ router.post('/register', requireAuth('candidate'), (req: Request, res: Response)
 /* ── GET /admin/stats ── (admin only) ───────────────────────────────── */
 router.get('/admin/stats', requireAuth('admin'), async (_req: Request, res: Response) => {
   try {
-    const [total, byForce, recent, companies, jobs] = await Promise.all([
+    const [total, byForce, recent, companies, jobs, pendingPayment, paid] = await Promise.all([
       pool.query('SELECT COUNT(*) FROM candidates'),
-      pool.query('SELECT force, COUNT(*) AS count FROM candidates GROUP BY force ORDER BY count DESC'),
-      pool.query('SELECT * FROM candidates ORDER BY created_at DESC LIMIT 5'),
+      pool.query(`SELECT force, COUNT(*) AS count FROM candidates
+                  WHERE force IS NOT NULL GROUP BY force ORDER BY count DESC`),
+      pool.query(`SELECT * FROM candidates WHERE full_name IS NOT NULL
+                  ORDER BY created_at DESC LIMIT 5`),
       pool.query('SELECT COUNT(*) FROM employers'),
       pool.query('SELECT COUNT(*) FROM jobs'),
+      pool.query(`SELECT COUNT(*) FROM candidates
+                  WHERE payment_status = 'pending' AND full_name IS NOT NULL`),
+      pool.query(`SELECT COUNT(*) FROM candidates WHERE payment_status = 'paid'`),
     ])
     return res.json({
       totalCandidates:  Number(total.rows[0].count),
       totalCompanies:   Number(companies.rows[0].count),
       totalJobs:        Number(jobs.rows[0].count),
+      pendingPayment:   Number(pendingPayment.rows[0].count),
+      paidCandidates:   Number(paid.rows[0].count),
       byForce:          byForce.rows,
       recentCandidates: recent.rows,
+    })
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+/* ── GET /admin/registrations ── (admin only) ───────────────────────── */
+router.get('/admin/registrations', requireAuth('admin'), async (req: Request, res: Response) => {
+  try {
+    const {
+      search = '', status = '', page = '1', limit = '20',
+    } = req.query as Record<string, string>
+    const pageNum  = Math.max(1, parseInt(page) || 1)
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20))
+    const offset   = (pageNum - 1) * limitNum
+
+    const conds:  string[] = []
+    const params: any[]    = []
+    let   pi               = 1
+
+    if (search) {
+      conds.push(`(c.full_name ILIKE $${pi} OR c.email ILIKE $${pi} OR c.mobile ILIKE $${pi} OR c.force ILIKE $${pi})`)
+      params.push(`%${search}%`)
+      pi++
+    }
+
+    if (status === 'pending') conds.push(`c.payment_status = 'pending' AND c.full_name IS NOT NULL`)
+    if (status === 'paid')    conds.push(`c.payment_status = 'paid'`)
+
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : ''
+
+    const [rows, countRow] = await Promise.all([
+      pool.query(
+        `SELECT c.id, c.email, c.full_name, c.mobile, c.force, c.rank, c.post,
+                c.loc1, c.application_fee, c.payment_status, c.registration_status,
+                c.created_at,
+                pa.razorpay_order_id, pa.razorpay_payment_id, pa.paid_at
+         FROM candidates c
+         LEFT JOIN payment_attempts pa ON pa.candidate_id = c.id AND pa.status = 'paid'
+         ${where}
+         ORDER BY c.created_at DESC
+         LIMIT $${pi} OFFSET $${pi + 1}`,
+        [...params, limitNum, offset],
+      ),
+      pool.query(`SELECT COUNT(*) FROM candidates c ${where}`, params),
+    ])
+
+    return res.json({
+      registrations: rows.rows,
+      total:  Number(countRow.rows[0].count),
+      page:   pageNum,
+      limit:  limitNum,
     })
   } catch (e: any) {
     return res.status(500).json({ error: e.message })

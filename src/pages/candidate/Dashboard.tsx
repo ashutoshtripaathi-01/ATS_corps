@@ -111,6 +111,47 @@ export default function CandidateDashboard() {
       <div className='max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 py-6 lg:py-8 space-y-6'>
 
         {/* ════════════════════════════════════════
+            PENDING PAYMENT BANNER
+        ════════════════════════════════════════ */}
+        {!loading && profile && profile.payment_status === 'pending' && profile.full_name && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className='bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-4'
+          >
+            <div className='w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0'>
+              <AlertCircle className='w-5 h-5 text-amber-600' />
+            </div>
+            <div className='flex-1 min-w-0'>
+              <p className='text-sm font-bold text-amber-900'>Registration Incomplete — Payment Pending</p>
+              <p className='text-xs text-amber-700 mt-0.5'>
+                Your profile is saved. Complete payment of ₹{profile.application_fee} to activate your registration.
+              </p>
+            </div>
+            <button
+              onClick={() => navigate('/candidate/payment', {
+                state: {
+                  fullName:       profile.full_name,
+                  mobile:         profile.mobile,
+                  rank:           profile.rank,
+                  force:          profile.force,
+                  post:           profile.post,
+                  loc1:           profile.loc1,
+                  loc2:           profile.loc2 ?? undefined,
+                  loc3:           profile.loc3 ?? undefined,
+                  applicationFee: profile.application_fee,
+                  unit:           profile.unit,
+                  retirementDate: profile.retirement_date,
+                },
+              })}
+              className='shrink-0 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-colors'
+            >
+              Pay Now
+            </button>
+          </motion.div>
+        )}
+
+        {/* ════════════════════════════════════════
             HERO BANNER
         ════════════════════════════════════════ */}
         <motion.div

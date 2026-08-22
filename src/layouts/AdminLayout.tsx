@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Building2, Users, Briefcase,
-  LogOut, Shield, Menu, X, Bell, Settings, ChevronDown,
+  LogOut, Shield, Menu, X, Bell, Settings, ChevronDown, ClipboardList,
 } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -15,10 +15,11 @@ import { getInitials } from '@/lib/utils'
 import { BRAND } from '@/constants'
 
 const NAV = [
-  { label: 'Dashboard',  icon: LayoutDashboard, href: '/admin/dashboard' },
-  { label: 'Companies',  icon: Building2,        href: '/admin/companies' },
-  { label: 'Candidates', icon: Users,            href: '/admin/candidates' },
-  { label: 'Job Posts',  icon: Briefcase,        href: '/admin/jobs' },
+  { label: 'Dashboard',     icon: LayoutDashboard, href: '/admin/dashboard' },
+  { label: 'Registrations', icon: ClipboardList,   href: '/admin/registrations' },
+  { label: 'Companies',     icon: Building2,        href: '/admin/companies' },
+  { label: 'Candidates',    icon: Users,            href: '/admin/candidates' },
+  { label: 'Job Posts',     icon: Briefcase,        href: '/admin/jobs' },
 ]
 
 export function AdminLayout() {
