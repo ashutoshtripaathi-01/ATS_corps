@@ -19,9 +19,9 @@ import {
   Zap,
   Upload,
   ArrowLeft,
-  Info,
   Lock,
   Award,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/useAppStore';
@@ -35,24 +35,35 @@ const FORCES = ['Army', 'Navy', 'Air Force', 'Para Military'] as const;
 type Force = (typeof FORCES)[number];
 
 const FORCE_META: Record<Force, { icon: React.ElementType; color: string; description: string }> = {
-  Army:           { icon: Shield, color: 'text-green-700',  description: 'Indian Army' },
-  Navy:           { icon: Anchor, color: 'text-blue-700',   description: 'Indian Navy' },
-  'Air Force':    { icon: Plane,  color: 'text-sky-600',    description: 'Indian Air Force' },
-  'Para Military':{ icon: Star,   color: 'text-orange-600', description: 'CRPF / BSF / CISF / ITBP' },
+  Army:            { icon: Shield, color: 'text-green-700',  description: 'Indian Army' },
+  Navy:            { icon: Anchor, color: 'text-blue-700',   description: 'Indian Navy' },
+  'Air Force':     { icon: Plane,  color: 'text-sky-600',    description: 'Indian Air Force' },
+  'Para Military': { icon: Star,   color: 'text-orange-600', description: 'CRPF / BSF / CISF / ITBP' },
 };
 
 const RANKS: Record<Force, string[]> = {
-  Army: ['Sepoy','Rifleman','Lance Naik','Naik','Havildar','Havildar Major','Naib Subedar','Subedar','Subedar Major','Hony. Lieutenant','Hony. Captain'],
-  Navy: ['Seaman 2nd Class','Seaman 1st Class','Leading Seaman','Petty Officer','Chief Petty Officer','Master Chief Petty Officer 2','Master Chief Petty Officer 1','Hony. Sub Lieutenant'],
-  'Air Force': ['Aircraftman','Leading Aircraftman','Corporal','Sergeant','Junior Warrant Officer (JWO)','Warrant Officer (WO)','Master Warrant Officer (MWO)','Hony. Flying Officer'],
+  Army:            ['Sepoy','Rifleman','Lance Naik','Naik','Havildar','Havildar Major','Naib Subedar','Subedar','Subedar Major','Hony. Lieutenant','Hony. Captain'],
+  Navy:            ['Seaman 2nd Class','Seaman 1st Class','Leading Seaman','Petty Officer','Chief Petty Officer','Master Chief Petty Officer 2','Master Chief Petty Officer 1','Hony. Sub Lieutenant'],
+  'Air Force':     ['Aircraftman','Leading Aircraftman','Corporal','Sergeant','Junior Warrant Officer (JWO)','Warrant Officer (WO)','Master Warrant Officer (MWO)','Hony. Flying Officer'],
   'Para Military': ['Constable (GD)','Head Constable (GD)','Assistant Sub-Inspector (ASI)','Sub-Inspector (SI)','Inspector','Assistant Commandant','Deputy Commandant'],
 };
 
 const POSTS    = ['Any', 'Guard Unarmed', 'Gunman', 'Security Supervisor', 'Other'] as const;
 const LOCATIONS = ['Upper Assam', 'Guwahati & Around', 'Lower Assam'] as const;
+
+// Registration fee — one-time, same regardless of location
 const LOCATION_FEES: Record<string, number> = {
   'Upper Assam': 1, 'Guwahati & Around': 1, 'Lower Assam': 1,
 };
+const REGISTRATION_FEE = 1; // ₹1 live-testing fee; same for all locations
+
+/* ─── Step metadata ───────────────────────────────────────────────────────── */
+const STEPS = [
+  { label: 'Personal & Service',       shortLabel: 'Personal',  desc: 'Force, rank & personal details' },
+  { label: 'Documents & Verification', shortLabel: 'Documents', desc: 'Service documents & verification' },
+  { label: 'Job Preferences',          shortLabel: 'Preferences', desc: 'Preferred roles & locations' },
+  { label: 'Review & Payment',         shortLabel: 'Review',    desc: 'Review your details & complete registration' },
+];
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface FormState {
@@ -62,9 +73,9 @@ interface FormState {
   otherPost: string; loc1: string; loc2: string; loc3: string;
 }
 const INITIAL: FormState = {
-  force:'', rank:'', fullName:'', mobile:'', unit:'', idCard:null,
-  retirementDate:'', dischargeBook:null, policeVerification:null,
-  post:'Any', gunLicense:'', otherPost:'', loc1:'', loc2:'', loc3:'',
+  force: '', rank: '', fullName: '', mobile: '', unit: '', idCard: null,
+  retirementDate: '', dischargeBook: null, policeVerification: null,
+  post: 'Any', gunLicense: '', otherPost: '', loc1: '', loc2: '', loc3: '',
 };
 
 /* ─── Shared atoms ───────────────────────────────────────────────────────── */
@@ -75,15 +86,19 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
     </label>
   );
 }
+
 function FieldError({ msg }: { msg?: string }) {
   if (!msg) return null;
   return (
-    <p className='flex items-center gap-1 mt-1.5 text-xs text-red-500'>
+    <p className='flex items-center gap-1 mt-1.5 text-xs text-red-500' role='alert'>
       <AlertCircle className='w-3.5 h-3.5 shrink-0' />{msg}
     </p>
   );
 }
-function TextInput({ label, required, placeholder, value, onChange, type = 'text', icon }: {
+
+function TextInput({
+  label, required, placeholder, value, onChange, type = 'text', icon,
+}: {
   label: string; required?: boolean; placeholder: string; value: string;
   onChange: (v: string) => void; type?: string; icon?: React.ElementType;
 }) {
@@ -92,8 +107,15 @@ function TextInput({ label, required, placeholder, value, onChange, type = 'text
     <div>
       <FieldLabel required={required}>{label}</FieldLabel>
       <div className='relative'>
-        {Icon && <Icon className='absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none' />}
-        <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        {Icon && (
+          <Icon className='absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none' />
+        )}
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          aria-label={label}
           className={`w-full h-12 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 placeholder:text-gray-400
             outline-none transition-all focus:border-[#F7A607] focus:ring-2 focus:ring-[#F7A607]/10
             ${Icon ? 'pl-10 pr-4' : 'px-4'}`}
@@ -102,7 +124,10 @@ function TextInput({ label, required, placeholder, value, onChange, type = 'text
     </div>
   );
 }
-function SelectInput({ label, required, value, onChange, placeholder, options, disabled }: {
+
+function SelectInput({
+  label, required, value, onChange, placeholder, options, disabled,
+}: {
   label?: string; required?: boolean; value: string; onChange: (v: string) => void;
   placeholder: string; options: string[]; disabled?: boolean;
 }) {
@@ -110,7 +135,11 @@ function SelectInput({ label, required, value, onChange, placeholder, options, d
     <div>
       {label && <FieldLabel required={required}>{label}</FieldLabel>}
       <div className='relative'>
-        <select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          aria-label={label ?? placeholder}
           className={`w-full h-12 rounded-xl border border-gray-200 bg-white text-sm appearance-none outline-none
             transition-all focus:border-[#F7A607] focus:ring-2 focus:ring-[#F7A607]/10 pl-4 pr-10
             ${value ? 'text-gray-900' : 'text-gray-400'}
@@ -124,74 +153,161 @@ function SelectInput({ label, required, value, onChange, placeholder, options, d
     </div>
   );
 }
-function FileUpload({ label, required, hint, file, onChange, accept = 'image/*,.pdf' }: {
-  label: string; required?: boolean; hint?: string; file: File | null;
-  onChange: (f: File | null) => void; accept?: string;
+
+/* ─── Document upload card ────────────────────────────────────────────────── */
+function DocUpload({
+  label, required, optional, description, file, onChange, accept = 'image/*,.pdf',
+}: {
+  label: string; required?: boolean; optional?: boolean; description?: string;
+  file: File | null; onChange: (f: File | null) => void; accept?: string;
 }) {
   const ref = useRef<HTMLInputElement>(null);
+  const sizeMB = file ? (file.size / (1024 * 1024)).toFixed(1) : null;
+
   return (
-    <div>
-      <FieldLabel required={required}>{label}</FieldLabel>
-      {hint && <p className='text-xs text-gray-400 mb-2'>{hint}</p>}
-      <input ref={ref} type='file' accept={accept} className='hidden' onChange={(e) => onChange(e.target.files?.[0] ?? null)} />
-      {file ? (
-        <div className='flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl'>
-          <div className='w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center shrink-0'>
-            <CheckCircle className='w-4 h-4 text-green-600' />
-          </div>
-          <div className='flex-1 min-w-0'>
-            <p className='text-sm font-medium text-gray-900 truncate'>{file.name}</p>
-            <p className='text-xs text-gray-500'>{(file.size / 1024).toFixed(0)} KB</p>
-          </div>
-          <button onClick={() => onChange(null)} className='p-1 rounded-lg hover:bg-red-50 transition-colors'>
-            <X className='w-4 h-4 text-gray-400 hover:text-red-500' />
-          </button>
-        </div>
-      ) : (
-        <button onClick={() => ref.current?.click()}
-          className='w-full flex items-center gap-4 px-4 py-4 bg-gray-50 border border-dashed border-gray-300 rounded-xl
-            hover:bg-gray-100 hover:border-gray-400 active:scale-[0.99] transition-all text-left'
-        >
-          <div className='w-10 h-10 bg-white border border-gray-200 rounded-xl flex items-center justify-center shrink-0 shadow-sm'>
-            <Upload className='w-4 h-4 text-gray-500' />
+    <div className='bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm'>
+      {/* Card header */}
+      <div className='flex items-start justify-between px-4 pt-4 pb-3 border-b border-gray-50'>
+        <div className='flex items-center gap-2.5'>
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0
+            ${required ? 'bg-[#F7A607]/10' : 'bg-gray-100'}`}>
+            <FileText className={`w-4 h-4 ${required ? 'text-[#F7A607]' : 'text-gray-400'}`} />
           </div>
           <div>
-            <p className='text-sm font-medium text-gray-700'>Click to upload</p>
-            <p className='text-xs text-gray-400 mt-0.5'>JPG, PNG or PDF · Max 5 MB</p>
+            <p className='text-sm font-semibold text-gray-900 leading-tight'>{label}</p>
+            {description && <p className='text-xs text-gray-500 mt-0.5'>{description}</p>}
           </div>
-        </button>
-      )}
+        </div>
+        {required && (
+          <span className='text-[10px] font-bold text-[#F7A607] bg-[#F7A607]/10 px-2 py-0.5 rounded-full shrink-0 ml-2 mt-0.5'>
+            Required
+          </span>
+        )}
+        {optional && (
+          <span className='text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full shrink-0 ml-2 mt-0.5'>
+            Optional
+          </span>
+        )}
+      </div>
+
+      {/* Upload area */}
+      <div className='p-4'>
+        <input
+          ref={ref}
+          type='file'
+          accept={accept}
+          className='hidden'
+          aria-label={`Upload ${label}`}
+          onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+        />
+
+        {file ? (
+          /* Uploaded state */
+          <div className='flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl'>
+            <div className='w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center shrink-0'>
+              <CheckCircle className='w-4.5 h-4.5 text-green-600' />
+            </div>
+            <div className='flex-1 min-w-0'>
+              <p className='text-sm font-semibold text-gray-900 truncate'>{file.name}</p>
+              <p className='text-xs text-gray-500 mt-0.5'>{sizeMB} MB · Selected</p>
+            </div>
+            <div className='flex items-center gap-1.5 shrink-0'>
+              <button
+                type='button'
+                onClick={() => ref.current?.click()}
+                aria-label={`Replace ${label}`}
+                className='flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200
+                  rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors'
+              >
+                <RefreshCw className='w-3 h-3' /> Replace
+              </button>
+              <button
+                type='button'
+                onClick={() => onChange(null)}
+                aria-label={`Remove ${label}`}
+                className='p-1.5 rounded-lg hover:bg-red-50 transition-colors text-gray-400 hover:text-red-500'
+              >
+                <X className='w-3.5 h-3.5' />
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Empty state */
+          <button
+            type='button'
+            onClick={() => ref.current?.click()}
+            aria-label={`Upload ${label}`}
+            className='w-full flex items-center gap-4 px-4 py-4 bg-gray-50 border border-dashed border-gray-300 rounded-xl
+              hover:bg-gray-100 hover:border-[#F7A607]/50 active:scale-[0.99] transition-all text-left focus-visible:outline-none
+              focus-visible:ring-2 focus-visible:ring-[#F7A607]/40'
+          >
+            <div className='w-10 h-10 bg-white border border-gray-200 rounded-xl flex items-center justify-center shrink-0 shadow-sm'>
+              <Upload className='w-4 h-4 text-gray-500' />
+            </div>
+            <div>
+              <p className='text-sm font-semibold text-gray-700'>Click to select file</p>
+              <p className='text-xs text-gray-400 mt-0.5'>JPG, PNG or PDF · Maximum 5 MB</p>
+            </div>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
-/* ─── Step 1: Service Details ─────────────────────────────────────────────── */
-function ServiceStep({ data, update, errors }: {
-  data: FormState; update: (k: keyof FormState, v: any) => void;
+/* ══════════════════════════════════════════════════════════════════════════
+   STEP 1 — Personal & Service
+══════════════════════════════════════════════════════════════════════════ */
+function PersonalServiceStep({
+  data, update, errors,
+}: {
+  data: FormState;
+  update: (k: keyof FormState, v: any) => void;
   errors: Partial<Record<keyof FormState, string>>;
 }) {
   return (
-    <div className='space-y-5 pt-2 pb-6'>
+    <div className='space-y-6 pt-2 pb-8'>
+      {/* Section intro */}
+      <div>
+        <h2 className='text-lg font-extrabold text-gray-900 leading-tight' style={{ fontFamily: 'Plus Jakarta Sans' }}>
+          Tell us about your service
+        </h2>
+        <p className='text-sm text-gray-500 mt-1'>
+          Your military background helps us match you with suitable employment opportunities.
+        </p>
+      </div>
+
       {/* Force selection */}
       <div>
-        <FieldLabel required>Armed Force</FieldLabel>
+        <p className='text-sm font-semibold text-gray-700 mb-3'>
+          Which force did you serve in? <span className='text-red-500'>*</span>
+        </p>
         <div className='grid grid-cols-2 lg:grid-cols-4 gap-2'>
           {(FORCES as unknown as Force[]).map((f) => {
-            const meta = FORCE_META[f];
-            const Icon = meta.icon;
+            const meta     = FORCE_META[f];
+            const Icon     = meta.icon;
             const selected = data.force === f;
             return (
-              <button key={f} type='button'
+              <button
+                key={f}
+                type='button'
                 onClick={() => { update('force', f); update('rank', ''); }}
-                className={`flex items-center gap-3 px-3 py-3 rounded-xl border-2 text-left transition-all active:scale-[0.98]
-                  ${selected ? 'border-[#F7A607] bg-[#F7A607]/5' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+                aria-pressed={selected}
+                className={`flex items-center gap-3 px-3 py-3.5 rounded-xl border-2 text-left transition-all active:scale-[0.98]
+                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7A607]/40
+                  ${selected
+                    ? 'border-[#F7A607] bg-[#F7A607]/5'
+                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
               >
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${selected ? 'bg-[#F7A607]/15' : 'bg-gray-100'}`}>
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0
+                  ${selected ? 'bg-[#F7A607]/15' : 'bg-gray-100'}`}>
                   <Icon className={`w-4 h-4 ${selected ? 'text-[#F7A607]' : meta.color}`} />
                 </div>
                 <div className='min-w-0'>
-                  <p className={`text-sm font-semibold leading-tight ${selected ? 'text-[#292e31]' : 'text-gray-800'}`}>{f}</p>
-                  <p className='text-[10px] text-gray-400 truncate'>{meta.description}</p>
+                  <p className={`text-sm font-semibold leading-tight ${selected ? 'text-[#292e31]' : 'text-gray-800'}`}>
+                    {f}
+                  </p>
+                  <p className='text-[10px] text-gray-400 truncate mt-0.5'>{meta.description}</p>
                 </div>
               </button>
             );
@@ -202,31 +318,51 @@ function ServiceStep({ data, update, errors }: {
 
       {/* Rank */}
       <div>
-        <SelectInput label='Rank / Designation' required value={data.rank} onChange={(v) => update('rank', v)}
-          placeholder={data.force ? 'Select your rank' : 'Select force first'}
-          options={data.force ? RANKS[data.force] : []} disabled={!data.force}
+        <SelectInput
+          label='Rank / Designation'
+          required
+          value={data.rank}
+          onChange={(v) => update('rank', v)}
+          placeholder={data.force ? 'Select your rank' : 'Select a force first'}
+          options={data.force ? RANKS[data.force] : []}
+          disabled={!data.force}
         />
         <FieldError msg={errors.rank} />
       </div>
 
-      {/* Name + Mobile — 2-col on desktop */}
+      {/* Full Name + Mobile — 2-col on desktop */}
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
         <div>
-          <TextInput label='Full Name' required placeholder='As per service records' value={data.fullName} onChange={(v) => update('fullName', v)} />
+          <TextInput
+            label='Full Name'
+            required
+            placeholder='As per service records'
+            value={data.fullName}
+            onChange={(v) => update('fullName', v)}
+          />
           <FieldError msg={errors.fullName} />
         </div>
+
         <div>
-          <label className='block text-sm font-medium text-gray-700 mb-1.5'>
+          <label className='block text-sm font-medium text-gray-700 mb-1.5' htmlFor='mobile-input'>
             Mobile Number <span className='text-red-500'>*</span>
           </label>
           <div className='flex gap-2'>
-            <div className='flex items-center gap-1.5 px-3 h-12 bg-gray-50 border border-gray-200 rounded-xl shrink-0'>
-              <span className='text-base'>🇮🇳</span>
+            <div className='flex items-center gap-1.5 px-3 h-12 bg-gray-50 border border-gray-200 rounded-xl shrink-0 select-none'>
+              <span className='text-base leading-none'>🇮🇳</span>
               <span className='text-sm font-semibold text-gray-700'>+91</span>
             </div>
-            <input type='tel' inputMode='numeric' maxLength={10} placeholder='9876543210' value={data.mobile}
+            <input
+              id='mobile-input'
+              type='tel'
+              inputMode='numeric'
+              maxLength={10}
+              placeholder='9876543210'
+              value={data.mobile}
               onChange={(e) => update('mobile', e.target.value.replace(/\D/g, ''))}
-              className='flex-1 h-12 px-3 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#F7A607]/40 focus:border-[#F7A607]'
+              aria-label='Mobile number'
+              className='flex-1 h-12 px-3 text-sm border border-gray-200 rounded-xl bg-white
+                focus:outline-none focus:ring-2 focus:ring-[#F7A607]/40 focus:border-[#F7A607] transition-all'
             />
           </div>
           <FieldError msg={errors.mobile} />
@@ -236,16 +372,26 @@ function ServiceStep({ data, update, errors }: {
       {/* Unit + Retirement date — 2-col on desktop */}
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
         <div>
-          <TextInput label='Unit / Regiment' required placeholder='e.g. 4 ASSAM RIFLES' value={data.unit} onChange={(v) => update('unit', v)} />
+          <TextInput
+            label='Unit / Regiment'
+            required
+            placeholder='e.g. 4 ASSAM RIFLES'
+            value={data.unit}
+            onChange={(v) => update('unit', v)}
+          />
           <FieldError msg={errors.unit} />
         </div>
+
         <div>
           <FieldLabel required>Date of Retirement</FieldLabel>
           <div className='relative'>
             <Calendar className='absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none' />
-            <input type='date' value={data.retirementDate}
+            <input
+              type='date'
+              value={data.retirementDate}
               onChange={(e) => update('retirementDate', e.target.value)}
               max={new Date().toISOString().split('T')[0]}
+              aria-label='Date of retirement'
               className={`w-full h-12 rounded-xl border border-gray-200 bg-white text-sm outline-none
                 transition-all focus:border-[#F7A607] focus:ring-2 focus:ring-[#F7A607]/10 pl-10 pr-4
                 ${data.retirementDate ? 'text-gray-900' : 'text-gray-400'}`}
@@ -254,97 +400,142 @@ function ServiceStep({ data, update, errors }: {
           <FieldError msg={errors.retirementDate} />
         </div>
       </div>
-
-      {/* ID Card upload */}
-      <div>
-        <FileUpload label='Ex-Serviceman Identity Card' required hint='Upload front side — clear photo or scanned copy'
-          file={data.idCard} onChange={(f) => update('idCard', f)} />
-        <FieldError msg={errors.idCard} />
-      </div>
     </div>
   );
 }
 
-/* ─── Step 2: Documents ───────────────────────────────────────────────────── */
-function DocumentsStep({ data, update, errors }: {
-  data: FormState; update: (k: keyof FormState, v: any) => void;
+/* ══════════════════════════════════════════════════════════════════════════
+   STEP 2 — Documents & Verification
+══════════════════════════════════════════════════════════════════════════ */
+function DocumentsVerificationStep({
+  data, update, errors,
+}: {
+  data: FormState;
+  update: (k: keyof FormState, v: any) => void;
   errors: Partial<Record<keyof FormState, string>>;
 }) {
   return (
-    <div className='pt-2 pb-6 space-y-4'>
-      <div className='flex gap-3 p-3.5 bg-blue-50 border border-blue-100 rounded-xl'>
-        <Info className='w-4 h-4 text-blue-500 shrink-0 mt-0.5' />
-        <p className='text-xs text-blue-700 leading-relaxed'>
-          All documents are encrypted and stored securely. Used only for background verification.
+    <div className='space-y-6 pt-2 pb-8'>
+      {/* Section intro */}
+      <div>
+        <h2 className='text-lg font-extrabold text-gray-900 leading-tight' style={{ fontFamily: 'Plus Jakarta Sans' }}>
+          Upload your service documents
+        </h2>
+        <p className='text-sm text-gray-500 mt-1'>
+          These documents are used to verify your ex-serviceman status and eligibility.
         </p>
       </div>
 
-      <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
-        {/* Discharge Book */}
-        <div className='bg-white border border-gray-100 rounded-2xl p-4 space-y-3 shadow-sm'>
-          <div className='flex items-center gap-2.5'>
-            <div className='w-8 h-8 rounded-lg bg-[#F7A607]/10 flex items-center justify-center'>
-              <FileText className='w-4 h-4 text-[#F7A607]' />
-            </div>
-            <div>
-              <p className='text-sm font-semibold text-gray-900'>Educational Qualification</p>
-              <p className='text-xs text-gray-500'>Discharge Book upload</p>
-            </div>
-          </div>
-          <FileUpload label='Discharge Book' required hint='Army / Navy / Air Force / Para Military Discharge Book'
-            file={data.dischargeBook} onChange={(f) => update('dischargeBook', f)} />
-          <FieldError msg={errors.dischargeBook} />
+      {/* Document security note — only factual claims */}
+      <div className='flex gap-3 p-4 bg-gray-50 border border-gray-200 rounded-xl'>
+        <Lock className='w-4 h-4 text-gray-500 shrink-0 mt-0.5' />
+        <div>
+          <p className='text-sm font-semibold text-gray-700'>Your documents are private</p>
+          <p className='text-xs text-gray-500 mt-0.5 leading-relaxed'>
+            Documents are used only for candidate verification. They are not visible to employers or other candidates.
+          </p>
+          <p className='text-xs text-gray-400 mt-2'>Accepted formats: JPG, PNG, PDF · Maximum 5 MB per file</p>
+        </div>
+      </div>
+
+      {/* Required documents */}
+      <div className='space-y-3'>
+        <p className='text-xs font-bold text-gray-500 uppercase tracking-widest'>Required Documents</p>
+
+        {/* 1. Military Identity Card — moved here from Step 1 */}
+        <div>
+          <DocUpload
+            label='Military / Ex-Serviceman Identity Card'
+            description='Front side — clear photo or scanned copy'
+            required
+            file={data.idCard}
+            onChange={(f) => update('idCard', f)}
+          />
+          <FieldError msg={errors.idCard} />
         </div>
 
-        {/* Police Verification */}
-        <div className='bg-white border border-gray-100 rounded-2xl p-4 space-y-3 shadow-sm'>
-          <div className='flex items-center gap-2.5'>
-            <div className='w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center'>
-              <Shield className='w-4 h-4 text-green-600' />
-            </div>
-            <div>
-              <p className='text-sm font-semibold text-gray-900'>Police Verification</p>
-              <p className='text-xs text-gray-500'>Clearance certificate from local police</p>
-            </div>
-          </div>
-          <FileUpload label='Police Verification Certificate' hint='Upload police clearance from your home district (optional)'
-            file={data.policeVerification} onChange={(f) => update('policeVerification', f)} />
-          <FieldError msg={errors.policeVerification} />
+        {/* 2. Discharge Book */}
+        <div>
+          <DocUpload
+            label='Discharge Book'
+            description='Army / Navy / Air Force / Para Military Discharge Book'
+            required
+            file={data.dischargeBook}
+            onChange={(f) => update('dischargeBook', f)}
+          />
+          <FieldError msg={errors.dischargeBook} />
+        </div>
+      </div>
+
+      {/* Optional documents */}
+      <div className='space-y-3'>
+        <p className='text-xs font-bold text-gray-500 uppercase tracking-widest'>Optional Documents</p>
+        <div>
+          <DocUpload
+            label='Police Verification Certificate'
+            description='Clearance certificate from your home district police · Uploading this may help speed up verification.'
+            optional
+            file={data.policeVerification}
+            onChange={(f) => update('policeVerification', f)}
+          />
         </div>
       </div>
     </div>
   );
 }
 
-/* ─── Step 3: Post & Location ─────────────────────────────────────────────── */
-function PostLocationStep({ data, update, errors }: {
-  data: FormState; update: (k: keyof FormState, v: any) => void;
+/* ══════════════════════════════════════════════════════════════════════════
+   STEP 3 — Job Preferences
+══════════════════════════════════════════════════════════════════════════ */
+function JobPreferencesStep({
+  data, update, errors,
+}: {
+  data: FormState;
+  update: (k: keyof FormState, v: any) => void;
   errors: Partial<Record<keyof FormState, string>>;
 }) {
   const locOptions = (excluding: string[]) =>
     (LOCATIONS as unknown as string[]).filter((l) => !excluding.includes(l));
 
   return (
-    <div className='pt-2 pb-6 space-y-4'>
-      <div className='grid grid-cols-1 lg:grid-cols-2 gap-4 items-start'>
+    <div className='space-y-6 pt-2 pb-8'>
+      {/* Section intro */}
+      <div>
+        <h2 className='text-lg font-extrabold text-gray-900 leading-tight' style={{ fontFamily: 'Plus Jakarta Sans' }}>
+          Tell us where and what you want to work
+        </h2>
+        <p className='text-sm text-gray-500 mt-1'>
+          We'll use these preferences to recommend suitable opportunities.
+        </p>
+      </div>
 
-        {/* Post Applied For */}
-        <div className='bg-white border border-gray-100 rounded-2xl p-4 shadow-sm space-y-3'>
+      <div className='grid grid-cols-1 lg:grid-cols-2 gap-5 items-start'>
+
+        {/* Role preference */}
+        <div className='bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4'>
           <div className='flex items-center gap-2'>
             <Briefcase className='w-4 h-4 text-[#F7A607]' />
-            <p className='text-sm font-semibold text-gray-900'>Post Applied For</p>
+            <p className='text-sm font-bold text-gray-900'>What type of role are you interested in?</p>
           </div>
-          <FieldLabel>Select the post you are applying for</FieldLabel>
-          <div className='grid grid-cols-2 gap-2'>
+
+          <div className='space-y-2' role='radiogroup' aria-label='Job role preference'>
             {(POSTS as unknown as string[]).map((post) => {
               const active = data.post === post;
               return (
-                <button key={post} type='button' onClick={() => update('post', post)}
-                  className={`relative flex items-center gap-2 px-3 py-3 rounded-xl border-2 text-left transition-all active:scale-[0.98]
-                    ${active ? 'border-[#F7A607] bg-[#F7A607]/5' : 'border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-white'}`}
+                <button
+                  key={post}
+                  type='button'
+                  role='radio'
+                  aria-checked={active}
+                  onClick={() => update('post', post)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all active:scale-[0.99]
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7A607]/40
+                    ${active
+                      ? 'border-[#F7A607] bg-[#F7A607]/5'
+                      : 'border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-white'}`}
                 >
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
-                    ${active ? 'border-[#F7A607] bg-[#F7A607]' : 'border-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all
+                    ${active ? 'border-[#F7A607] bg-[#F7A607]' : 'border-gray-300 bg-white'}`}>
                     {active && <div className='w-1.5 h-1.5 bg-white rounded-full' />}
                   </div>
                   <span className={`text-sm font-medium ${active ? 'text-[#292e31]' : 'text-gray-700'}`}>{post}</span>
@@ -356,61 +547,87 @@ function PostLocationStep({ data, update, errors }: {
 
           <AnimatePresence>
             {data.post === 'Gunman' && (
-              <motion.div key='gun' initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-                <TextInput label='Gun / Weapon License Number' required placeholder='Enter license number' value={data.gunLicense} onChange={(v) => update('gunLicense', v)} />
+              <motion.div key='gun' initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className='overflow-hidden'>
+                <TextInput
+                  label='Gun / Weapon License Number'
+                  required
+                  placeholder='Enter license number'
+                  value={data.gunLicense}
+                  onChange={(v) => update('gunLicense', v)}
+                />
                 <FieldError msg={errors.gunLicense} />
               </motion.div>
             )}
             {data.post === 'Other' && (
-              <motion.div key='other' initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-                <TextInput label='Specify Post' required placeholder='Enter the post you are applying for' value={data.otherPost} onChange={(v) => update('otherPost', v)} />
+              <motion.div key='other' initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className='overflow-hidden'>
+                <TextInput
+                  label='Specify Role'
+                  required
+                  placeholder='Describe the role you are interested in'
+                  value={data.otherPost}
+                  onChange={(v) => update('otherPost', v)}
+                />
                 <FieldError msg={errors.otherPost} />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Preferred Location */}
-        <div className='bg-white border border-gray-100 rounded-2xl p-4 shadow-sm space-y-4'>
-          <div className='flex items-start gap-2'>
-            <MapPin className='w-4 h-4 text-[#F7A607] shrink-0 mt-0.5' />
-            <div>
-              <p className='text-sm font-semibold text-gray-900'>Preferred Posting Location</p>
-              <p className='text-xs text-gray-500 mt-0.5'>Arrange in order of preference. No location can repeat.</p>
+        {/* Location preferences */}
+        <div className='bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-5'>
+          <div>
+            <div className='flex items-center gap-2 mb-1'>
+              <MapPin className='w-4 h-4 text-[#F7A607]' />
+              <p className='text-sm font-bold text-gray-900'>Your preferred locations</p>
             </div>
+            <p className='text-xs text-gray-500'>Arrange your locations in order of preference. The same location cannot appear twice.</p>
           </div>
 
           {([
-            { key: 'loc1' as const, label: 'Priority 1', badge: '1st Choice', badgeColor: 'bg-[#F7A607] text-white' },
-            { key: 'loc2' as const, label: 'Priority 2', badge: '2nd Choice', badgeColor: 'bg-gray-200 text-gray-700' },
-            { key: 'loc3' as const, label: 'Priority 3', badge: '3rd Choice', badgeColor: 'bg-gray-100 text-gray-600' },
-          ]).map(({ key, label, badge, badgeColor }) => {
-            const excluding = key === 'loc1' ? [] : key === 'loc2' ? [data.loc1] : [data.loc1, data.loc2];
+            { key: 'loc1' as const, num: '1', label: 'First choice',  numBg: 'bg-[#F7A607] text-white' },
+            { key: 'loc2' as const, num: '2', label: 'Second choice', numBg: 'bg-gray-700 text-white' },
+            { key: 'loc3' as const, num: '3', label: 'Third choice',  numBg: 'bg-gray-300 text-gray-700' },
+          ]).map(({ key, num, label, numBg }) => {
+            const excluding  = key === 'loc1' ? [] : key === 'loc2' ? [data.loc1] : [data.loc1, data.loc2];
             const isDisabled = (key === 'loc2' && !data.loc1) || (key === 'loc3' && !data.loc2);
             return (
-              <div key={key}>
-                <div className='flex items-center justify-between mb-1.5'>
-                  <FieldLabel>{label}</FieldLabel>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${badgeColor}`}>{badge}</span>
+              <div key={key} className='space-y-1.5'>
+                <div className='flex items-center gap-2'>
+                  <span className={`w-5 h-5 rounded-full text-[10px] font-extrabold flex items-center justify-center shrink-0 ${numBg}`}>
+                    {num}
+                  </span>
+                  <span className='text-xs font-semibold text-gray-600'>{label}</span>
                 </div>
-                <SelectInput value={data[key]}
-                  onChange={(v) => { update(key, v); if (key === 'loc1') { update('loc2', ''); update('loc3', ''); } if (key === 'loc2') update('loc3', ''); }}
-                  placeholder='Select location' options={locOptions(excluding)} disabled={isDisabled}
+                <SelectInput
+                  value={data[key]}
+                  onChange={(v) => {
+                    update(key, v);
+                    if (key === 'loc1') { update('loc2', ''); update('loc3', ''); }
+                    if (key === 'loc2') update('loc3', '');
+                  }}
+                  placeholder={isDisabled ? 'Select a higher priority first' : 'Choose location'}
+                  options={locOptions(excluding)}
+                  disabled={isDisabled}
                 />
                 <FieldError msg={errors[key]} />
               </div>
             );
           })}
 
+          {/* Registration fee notice — correct terminology */}
           {data.loc1 && (
-            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-              className='flex items-center justify-between p-3 bg-amber-50 border border-amber-100 rounded-xl'
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className='flex items-center justify-between p-3.5 bg-amber-50 border border-amber-100 rounded-xl mt-2'
             >
               <div>
-                <p className='text-xs text-gray-500'>Application fee for</p>
-                <p className='text-sm font-semibold text-gray-900'>{data.loc1}</p>
+                <p className='text-xs font-semibold text-gray-700'>Registration Fee</p>
+                <p className='text-[11px] text-gray-500 mt-0.5'>One-time · non-refundable</p>
               </div>
-              <p className='text-lg font-extrabold text-[#F7A607]'>₹{LOCATION_FEES[data.loc1]?.toLocaleString()}</p>
+              <div className='text-right'>
+                <p className='text-xl font-extrabold text-[#F7A607]'>₹{REGISTRATION_FEE.toLocaleString()}</p>
+              </div>
             </motion.div>
           )}
         </div>
@@ -419,103 +636,146 @@ function PostLocationStep({ data, update, errors }: {
   );
 }
 
-/* ─── Step 4: Confirm & Proceed ───────────────────────────────────────────── */
-function PaymentStep({ data, onProceed, onGoBack, saving }: {
-  data: FormState; onProceed: () => void; onGoBack: () => void; saving?: boolean;
+/* ══════════════════════════════════════════════════════════════════════════
+   STEP 4 — Review & Payment
+══════════════════════════════════════════════════════════════════════════ */
+function ReviewPaymentStep({
+  data, onProceed, onGoBack, saving,
+}: {
+  data: FormState;
+  onProceed: () => void;
+  onGoBack: () => void;
+  saving?: boolean;
 }) {
-  const fee = LOCATION_FEES[data.loc1] ?? 0;
+  const fee = LOCATION_FEES[data.loc1] ?? REGISTRATION_FEE;
 
   if (!data.loc1) {
     return (
-      <div className='pt-2 pb-6 flex flex-col items-center justify-center min-h-[50vh] text-center gap-4'>
+      <div className='pt-2 pb-8 flex flex-col items-center justify-center min-h-[50vh] text-center gap-4'>
         <div className='w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center'>
           <MapPin className='w-7 h-7 text-amber-500' />
         </div>
         <p className='font-semibold text-gray-900'>No location selected</p>
-        <p className='text-sm text-gray-500'>Go back to Step 3 and select your preferred posting location.</p>
-        <button onClick={onGoBack} className='flex items-center gap-2 text-sm font-semibold text-[#F7A607] hover:underline'>
-          <ArrowLeft className='w-4 h-4' /> Go back to Step 3
+        <p className='text-sm text-gray-500 max-w-xs'>
+          Go back to Step 3 and choose your preferred posting locations.
+        </p>
+        <button
+          type='button'
+          onClick={onGoBack}
+          className='flex items-center gap-2 text-sm font-semibold text-[#F7A607] hover:underline focus-visible:outline-none'
+        >
+          <ArrowLeft className='w-4 h-4' /> Back to Job Preferences
         </button>
       </div>
     );
   }
 
   return (
-    <div className='pt-2 pb-6 space-y-4'>
+    <div className='space-y-5 pt-2 pb-8'>
+      <div>
+        <h2 className='text-lg font-extrabold text-gray-900 leading-tight' style={{ fontFamily: 'Plus Jakarta Sans' }}>
+          Review your application
+        </h2>
+        <p className='text-sm text-gray-500 mt-1'>
+          Check your details below, then proceed to payment to complete your registration.
+        </p>
+      </div>
+
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
-        {/* Summary card */}
+
+        {/* Application summary */}
         <div className='bg-[#292e31] rounded-2xl p-5 text-white'>
-          <p className='text-xs text-gray-400 mb-1'>Application Fee</p>
-          <div className='flex items-baseline gap-1.5 mb-1'>
-            <span className='text-3xl font-extrabold'>₹{fee.toLocaleString()}</span>
-            <span className='text-sm text-gray-400'>one-time</span>
+          {/* Fee */}
+          <div className='mb-4'>
+            <p className='text-xs text-gray-400 uppercase tracking-wider mb-1'>Registration Fee</p>
+            <div className='flex items-baseline gap-1.5'>
+              <span className='text-4xl font-black text-[#F7A607]'>₹{fee.toLocaleString()}</span>
+              <span className='text-sm text-gray-400'>one-time</span>
+            </div>
+            <p className='text-xs text-gray-500 mt-1'>Non-refundable · Secured by Razorpay</p>
           </div>
-          <div className='inline-flex items-center gap-1.5 bg-[#F7A607]/20 text-[#F7A607] text-xs font-semibold px-2.5 py-1 rounded-full mb-3'>
-            <CreditCard className='w-3 h-3' /> One-time registration fee
-          </div>
-          <div className='pt-3 border-t border-white/10 space-y-1.5'>
+
+          <div className='h-px bg-white/10 mb-4' />
+
+          {/* Summary rows */}
+          <p className='text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3'>Application Details</p>
+          <div className='space-y-2.5'>
             {[
-              { label: 'Applicant',           value: data.fullName || '—' },
-              { label: 'Rank & Force',        value: `${data.rank}, ${data.force}` },
-              { label: 'Post Applied',        value: data.post },
-              { label: 'Priority 1 Location', value: data.loc1 },
+              { label: 'Applicant',       value: data.fullName || '—' },
+              { label: 'Rank & Force',    value: `${data.rank}, ${data.force}` },
+              { label: 'Post Preference', value: data.post === 'Other' && data.otherPost ? data.otherPost : data.post },
+              { label: 'Priority 1',      value: data.loc1 },
+              ...(data.loc2 ? [{ label: 'Priority 2', value: data.loc2 }] : []),
+              ...(data.loc3 ? [{ label: 'Priority 3', value: data.loc3 }] : []),
             ].map((r) => (
-              <div key={r.label} className='flex justify-between items-center'>
-                <span className='text-xs text-gray-400'>{r.label}</span>
-                <span className='text-xs font-semibold text-white truncate max-w-[55%] text-right'>{r.value}</span>
+              <div key={r.label} className='flex justify-between items-start gap-4'>
+                <span className='text-xs text-gray-400 shrink-0'>{r.label}</span>
+                <span className='text-xs font-semibold text-white text-right max-w-[55%] truncate'>{r.value}</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Fee reference */}
-        <div className='bg-white border border-gray-100 rounded-2xl p-4 shadow-sm flex flex-col justify-between'>
-          <p className='text-xs font-medium text-gray-500 mb-3'>Location fee structure</p>
-          <div className='divide-y divide-gray-50 flex-1'>
-            {Object.entries(LOCATION_FEES).map(([loc, amt]) => (
-              <div key={loc} className={`flex items-center justify-between py-2.5 ${data.loc1 === loc ? 'text-[#292e31]' : 'text-gray-500'}`}>
-                <div className='flex items-center gap-2'>
-                  <MapPin className={`w-3.5 h-3.5 ${data.loc1 === loc ? 'text-[#F7A607]' : 'text-gray-300'}`} />
-                  <span className={`text-sm ${data.loc1 === loc ? 'font-semibold' : 'font-normal'}`}>{loc}</span>
-                  {data.loc1 === loc && (
-                    <span className='text-[10px] font-semibold px-1.5 py-0.5 bg-[#F7A607]/10 text-[#F7A607] rounded-full'>Selected</span>
-                  )}
-                </div>
-                <span className={`text-sm font-bold ${data.loc1 === loc ? 'text-[#F7A607]' : 'text-gray-400'}`}>₹{amt.toLocaleString()}</span>
+        {/* Registration fee card — corrected terminology */}
+        <div className='bg-white border border-gray-100 rounded-2xl p-5 shadow-sm flex flex-col gap-4'>
+          <div>
+            <p className='text-xs font-bold text-gray-500 uppercase tracking-widest mb-3'>Registration Fee</p>
+            <div className='flex items-center justify-between py-3 border border-[#F7A607]/20 bg-[#F7A607]/5 rounded-xl px-4'>
+              <div>
+                <p className='text-sm font-bold text-gray-900'>One-Time Registration</p>
+                <p className='text-xs text-gray-500 mt-0.5'>Covers all three preferred locations</p>
               </div>
-            ))}
+              <p className='text-2xl font-extrabold text-[#F7A607]'>₹{fee.toLocaleString()}</p>
+            </div>
+            <p className='text-xs text-gray-400 mt-3 leading-relaxed'>
+              This is a one-time registration fee. You will not be charged separately for each preferred location.
+            </p>
           </div>
-          <p className='text-[10px] text-gray-400 mt-4 flex items-center gap-1.5 pt-3 border-t border-gray-50'>
-            <Lock className='w-3 h-3 text-green-500' /> Secured by Razorpay · 256-bit SSL
-          </p>
+
+          <div className='mt-auto pt-3 border-t border-gray-50 space-y-1.5'>
+            <div className='flex items-center gap-2 text-xs text-gray-500'>
+              <Lock className='w-3.5 h-3.5 text-green-500 shrink-0' />
+              256-bit SSL · Secured by Razorpay
+            </div>
+            <div className='flex items-center gap-2 text-xs text-gray-500'>
+              <Shield className='w-3.5 h-3.5 text-[#F7A607] shrink-0' />
+              DGR Empanelled Partner
+            </div>
+          </div>
         </div>
       </div>
 
-      <Button size='lg' className='w-full lg:max-w-xs rounded-xl text-sm font-bold gap-2.5 h-13' onClick={onProceed} disabled={saving}>
-        {saving
-          ? <><div className='w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin' /> Saving…</>
-          : <><CreditCard className='w-4 h-4' /> Proceed to Payment</>
-        }
+      <Button
+        size='lg'
+        className='w-full lg:max-w-xs rounded-xl text-sm font-bold gap-2.5 h-13'
+        onClick={onProceed}
+        disabled={saving}
+      >
+        {saving ? (
+          <>
+            <div className='w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin' />
+            Saving…
+          </>
+        ) : (
+          <>
+            <CreditCard className='w-4 h-4' />
+            Proceed to Payment
+          </>
+        )}
       </Button>
     </div>
   );
 }
 
-/* ─── Step metadata ───────────────────────────────────────────────────────── */
-const STEPS = [
-  { label: 'Service',    desc: 'Force, rank & personal details' },
-  { label: 'Documents',  desc: 'Discharge book & verification' },
-  { label: 'Preference', desc: 'Post applied & preferred location' },
-  { label: 'Payment',    desc: 'Review & proceed to payment' },
-];
-
-/* ─── Main Page ───────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   MAIN PAGE
+══════════════════════════════════════════════════════════════════════════ */
 export default function CandidateRegister() {
-  const navigate = useNavigate();
-  const { user } = useAppStore();
+  const navigate  = useNavigate();
+  const { user }  = useAppStore();
 
-  const [step, setStep] = useState(1);
-  const [data, setData] = useState<FormState>(INITIAL);
+  const [step,   setStep]   = useState(1);
+  const [data,   setData]   = useState<FormState>(INITIAL);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [saving, setSaving] = useState(false);
 
@@ -526,35 +786,93 @@ export default function CandidateRegister() {
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof FormState, string>> = {};
+
     if (step === 1) {
-      if (!data.force) e.force = 'Please select your armed force';
-      if (!data.rank) e.rank = 'Please select your rank';
-      if (!data.fullName.trim()) e.fullName = 'Full name is required';
-      if (!/^[6-9]\d{9}$/.test(data.mobile)) e.mobile = 'Enter a valid 10-digit mobile number';
-      if (!data.unit.trim()) e.unit = 'Unit / regiment is required';
-      if (!data.idCard) e.idCard = 'Please upload your Ex-SM Identity Card';
-      if (!data.retirementDate) e.retirementDate = 'Date of retirement is required';
+      if (!data.force)                         e.force          = 'Please select your armed force';
+      if (!data.rank)                          e.rank           = 'Please select your rank';
+      if (!data.fullName.trim())               e.fullName       = 'Full name is required';
+      if (!/^[6-9]\d{9}$/.test(data.mobile))  e.mobile         = 'Enter a valid 10-digit mobile number';
+      if (!data.unit.trim())                   e.unit           = 'Unit / regiment is required';
+      if (!data.retirementDate)                e.retirementDate = 'Date of retirement is required';
     }
+
     if (step === 2) {
+      if (!data.idCard)       e.idCard       = 'Please upload your Ex-Serviceman Identity Card';
       if (!data.dischargeBook) e.dischargeBook = 'Please upload your Discharge Book';
     }
+
     if (step === 3) {
       if (data.post === 'Gunman' && !data.gunLicense.trim()) e.gunLicense = 'License number is required';
-      if (data.post === 'Other' && !data.otherPost.trim()) e.otherPost = 'Please specify the post';
-      if (!data.loc1) e.loc1 = 'Please select Priority 1 location';
-      if (!data.loc2) e.loc2 = 'Please select Priority 2 location';
-      if (!data.loc3) e.loc3 = 'Please select Priority 3 location';
+      if (data.post === 'Other' && !data.otherPost.trim())   e.otherPost  = 'Please specify the role';
+      if (!data.loc1) e.loc1 = 'Please select your first preferred location';
+      if (!data.loc2) e.loc2 = 'Please select your second preferred location';
+      if (!data.loc3) e.loc3 = 'Please select your third preferred location';
     }
+
     setErrors(e);
     if (Object.keys(e).length > 0) {
-      toast({ title: 'Required fields missing', description: 'Please fill all required fields.', variant: 'error' });
+      toast({ title: 'Required fields missing', description: 'Please fill all required fields before continuing.', variant: 'error' });
       return false;
     }
     return true;
   };
 
-  const goNext = () => { if (!validate()) return; setStep((s) => s + 1); window.scrollTo(0, 0); };
-  const goBack = () => { if (step > 1) { setStep((s) => s - 1); window.scrollTo(0, 0); } else navigate('/'); };
+  const goNext = () => {
+    if (!validate()) return;
+    setStep((s) => s + 1);
+    window.scrollTo(0, 0);
+  };
+  const goBack = () => {
+    if (step > 1) { setStep((s) => s - 1); window.scrollTo(0, 0); }
+    else navigate('/');
+  };
+
+  const handleProceed = async () => {
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('mobile',         data.mobile);
+      fd.append('force',          data.force);
+      fd.append('rank',           data.rank);
+      fd.append('fullName',       data.fullName);
+      fd.append('unit',           data.unit);
+      fd.append('retirementDate', data.retirementDate);
+      fd.append('post',           data.post);
+      if (data.otherPost)  fd.append('otherPost',  data.otherPost);
+      if (data.gunLicense) fd.append('gunLicense', data.gunLicense);
+      fd.append('loc1', data.loc1);
+      if (data.loc2) fd.append('loc2', data.loc2);
+      if (data.loc3) fd.append('loc3', data.loc3);
+      fd.append('applicationFee', String(LOCATION_FEES[data.loc1] ?? REGISTRATION_FEE));
+      if (data.idCard)             fd.append('idCard',             data.idCard);
+      if (data.dischargeBook)      fd.append('dischargeBook',      data.dischargeBook);
+      if (data.policeVerification) fd.append('policeVerification', data.policeVerification);
+
+      await saveProfile(fd);
+
+      navigate('/candidate/payment', {
+        state: {
+          mobile:         data.mobile,
+          fullName:       data.fullName,
+          rank:           data.rank,
+          force:          data.force,
+          post:           data.post,
+          loc1:           data.loc1,
+          loc2:           data.loc2,
+          loc3:           data.loc3,
+          applicationFee: LOCATION_FEES[data.loc1] ?? REGISTRATION_FEE,
+          unit:           data.unit,
+          retirementDate: data.retirementDate,
+          otherPost:      data.otherPost,
+          gunLicense:     data.gunLicense,
+        },
+      });
+    } catch (err: any) {
+      toast({ title: 'Could not save profile', description: err.message, variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className='min-h-screen lg:h-screen bg-gray-50 flex flex-col lg:flex-row overflow-hidden'>
@@ -562,11 +880,13 @@ export default function CandidateRegister() {
       {/* ══════════════════════════════════════════════════════════
           LEFT SIDEBAR — desktop only
       ══════════════════════════════════════════════════════════ */}
-      <aside className='hidden lg:flex lg:w-[260px] xl:w-[280px] shrink-0 bg-[#1a1d1f] flex-col sticky top-0 h-screen overflow-y-auto'>
-
-        {/* Logo + brand */}
+      <aside
+        className='hidden lg:flex lg:w-[260px] xl:w-[280px] shrink-0 bg-[#1a1d1f] flex-col sticky top-0 h-screen overflow-y-auto'
+        aria-label='Registration progress'
+      >
+        {/* Logo */}
         <div className='px-6 pt-7 pb-6 border-b border-white/8'>
-          <div className='flex items-center gap-3 mb-1'>
+          <div className='flex items-center gap-3'>
             <img src={companyLogo} alt='Ex-Serviceman Jobs' className='w-9 h-9 object-contain' />
             <div>
               <p className='font-extrabold text-white text-sm leading-tight' style={{ fontFamily: 'Plus Jakarta Sans' }}>
@@ -579,7 +899,7 @@ export default function CandidateRegister() {
 
         {/* Vertical step progress */}
         <div className='px-6 py-6 flex-1'>
-          <p className='text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-5'>Registration Steps</p>
+          <p className='text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-5'>Your Registration</p>
           <div className='space-y-1'>
             {STEPS.map(({ label, desc }, i) => {
               const s      = i + 1;
@@ -587,12 +907,13 @@ export default function CandidateRegister() {
               const active = s === step;
               return (
                 <div key={label} className='flex gap-3'>
-                  {/* Step marker + connector */}
                   <div className='flex flex-col items-center'>
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-all
-                      ${done   ? 'bg-green-500 text-white'
-                      : active ? 'bg-[#F7A607] text-white ring-4 ring-[#F7A607]/20'
-                      :          'bg-white/8 text-gray-500'}`}
+                    <div
+                      className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-all
+                        ${done   ? 'bg-green-500 text-white'
+                        : active ? 'bg-[#F7A607] text-white ring-4 ring-[#F7A607]/20'
+                        :          'bg-white/8 text-gray-500'}`}
+                      aria-current={active ? 'step' : undefined}
                     >
                       {done ? <CheckCircle className='w-4 h-4' /> : s}
                     </div>
@@ -600,9 +921,9 @@ export default function CandidateRegister() {
                       <div className={`w-0.5 h-8 mt-1 rounded-full transition-all ${done ? 'bg-green-500/40' : 'bg-white/8'}`} />
                     )}
                   </div>
-                  {/* Label */}
                   <div className='pb-8'>
-                    <p className={`text-sm font-semibold leading-tight transition-all ${active ? 'text-white' : done ? 'text-green-400' : 'text-gray-500'}`}>
+                    <p className={`text-sm font-semibold leading-tight transition-all
+                      ${active ? 'text-white' : done ? 'text-green-400' : 'text-gray-500'}`}>
                       {label}
                     </p>
                     <p className={`text-[10px] mt-0.5 leading-snug ${active ? 'text-gray-400' : 'text-gray-600'}`}>{desc}</p>
@@ -617,7 +938,7 @@ export default function CandidateRegister() {
         <div className='px-6 pb-6 space-y-2 border-t border-white/8 pt-4'>
           <div className='flex items-center gap-2 text-xs text-gray-500'>
             <Lock className='w-3.5 h-3.5 text-green-500 shrink-0' />
-            Documents encrypted & secure
+            Documents private — not shared with employers
           </div>
           <div className='flex items-center gap-2 text-xs text-gray-500'>
             <Shield className='w-3.5 h-3.5 text-[#F7A607] shrink-0' />
@@ -637,20 +958,24 @@ export default function CandidateRegister() {
       </aside>
 
       {/* ══════════════════════════════════════════════════════════
-          MAIN CONTENT — full width on mobile, flex-1 on desktop
+          MAIN CONTENT
       ══════════════════════════════════════════════════════════ */}
       <div className='flex-1 flex flex-col min-w-0 lg:overflow-hidden'>
 
-        {/* ── Sticky header ── */}
+        {/* Sticky header */}
         <div className='sticky top-0 z-40 bg-white border-b border-gray-100'>
           <div className='flex items-center gap-3 px-4 lg:px-8 h-14 max-w-3xl lg:max-w-none mx-auto'>
-            <button onClick={goBack}
-              className='w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors shrink-0'
+            <button
+              onClick={goBack}
+              aria-label='Go back'
+              className='w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors shrink-0
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7A607]/40'
             >
               <ChevronLeft className='w-4 h-4 text-gray-600' />
             </button>
+
             <div className='flex items-center gap-2 flex-1 min-w-0'>
-              {/* Brand — mobile only (desktop has sidebar) */}
+              {/* Mobile brand */}
               <div className='flex items-center gap-2 lg:hidden'>
                 <div className='w-7 h-7 rounded-lg bg-[#F7A607] flex items-center justify-center shrink-0'>
                   <Zap className='w-3.5 h-3.5 text-white' />
@@ -659,7 +984,7 @@ export default function CandidateRegister() {
                   {BRAND.name} — Registration
                 </span>
               </div>
-              {/* Step name — desktop only */}
+              {/* Desktop step info */}
               <div className='hidden lg:flex items-center gap-2'>
                 <span className='text-xs font-bold text-[#F7A607] uppercase tracking-wider'>
                   Step {step} of 4
@@ -669,27 +994,41 @@ export default function CandidateRegister() {
                 <span className='hidden xl:inline text-xs text-gray-400'>— {STEPS[step - 1].desc}</span>
               </div>
             </div>
+
             <span className='text-xs font-semibold text-[#F7A607] shrink-0'>{step}/4</span>
           </div>
 
           {/* Progress bar */}
           <div className='h-0.5 bg-gray-100'>
-            <motion.div className='h-full bg-[#F7A607]'
-              animate={{ width: `${(step / 4) * 100}%` }} transition={{ duration: 0.35, ease: 'easeInOut' }} />
+            <motion.div
+              className='h-full bg-[#F7A607]'
+              animate={{ width: `${(step / 4) * 100}%` }}
+              transition={{ duration: 0.35, ease: 'easeInOut' }}
+            />
           </div>
 
-          {/* Step tabs — mobile only */}
-          <div className='flex border-b border-gray-100 lg:hidden'>
-            {STEPS.map(({ label }, i) => {
-              const s = i + 1; const done = s < step; const active = s === step;
+          {/* Mobile step tabs */}
+          <div className='flex border-b border-gray-100 lg:hidden' role='tablist' aria-label='Registration steps'>
+            {STEPS.map(({ shortLabel }, i) => {
+              const s      = i + 1;
+              const done   = s < step;
+              const active = s === step;
               return (
-                <div key={label} className={`flex-1 flex flex-col items-center py-2 gap-0.5 border-b-2 transition-all
-                  ${active ? 'border-[#F7A607]' : done ? 'border-green-400' : 'border-transparent'}`}>
-                  <span className={`text-[11px] font-semibold ${active ? 'text-[#F7A607]' : done ? 'text-green-600' : 'text-gray-400'}`}>
+                <div
+                  key={shortLabel}
+                  role='tab'
+                  aria-selected={active}
+                  aria-label={`Step ${s}: ${STEPS[i].label}`}
+                  className={`flex-1 flex flex-col items-center py-2 gap-0.5 border-b-2 transition-all
+                    ${active ? 'border-[#F7A607]' : done ? 'border-green-400' : 'border-transparent'}`}
+                >
+                  <span className={`text-[11px] font-semibold
+                    ${active ? 'text-[#F7A607]' : done ? 'text-green-600' : 'text-gray-400'}`}>
                     {done ? '✓' : s}
                   </span>
-                  <span className={`text-[9px] font-medium ${active ? 'text-[#F7A607]' : done ? 'text-green-600' : 'text-gray-400'}`}>
-                    {label}
+                  <span className={`text-[9px] font-medium leading-tight text-center
+                    ${active ? 'text-[#F7A607]' : done ? 'text-green-600' : 'text-gray-400'}`}>
+                    {shortLabel}
                   </span>
                 </div>
               );
@@ -697,65 +1036,31 @@ export default function CandidateRegister() {
           </div>
         </div>
 
-        {/* ── Form content ── */}
+        {/* Form content */}
         <div className='flex-1 overflow-y-auto pb-28 lg:pb-6'>
           <div className='px-4 lg:px-8 xl:px-12 max-w-3xl lg:max-w-none mx-auto'>
             <AnimatePresence mode='wait'>
-              <motion.div key={step}
-                initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+              <motion.div
+                key={step}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2 }}
               >
-                {step === 1 && <ServiceStep      data={data} update={update} errors={errors} />}
-                {step === 2 && <DocumentsStep    data={data} update={update} errors={errors} />}
-                {step === 3 && <PostLocationStep  data={data} update={update} errors={errors} />}
+                {step === 1 && (
+                  <PersonalServiceStep data={data} update={update} errors={errors} />
+                )}
+                {step === 2 && (
+                  <DocumentsVerificationStep data={data} update={update} errors={errors} />
+                )}
+                {step === 3 && (
+                  <JobPreferencesStep data={data} update={update} errors={errors} />
+                )}
                 {step === 4 && (
-                  <PaymentStep data={data} saving={saving}
-                    onProceed={async () => {
-                      setSaving(true)
-                      try {
-                        const fd = new FormData()
-                        fd.append('mobile',         data.mobile)
-                        fd.append('force',          data.force)
-                        fd.append('rank',           data.rank)
-                        fd.append('fullName',       data.fullName)
-                        fd.append('unit',           data.unit)
-                        fd.append('retirementDate', data.retirementDate)
-                        fd.append('post',           data.post)
-                        if (data.otherPost)   fd.append('otherPost',   data.otherPost)
-                        if (data.gunLicense)  fd.append('gunLicense',  data.gunLicense)
-                        fd.append('loc1',     data.loc1)
-                        if (data.loc2) fd.append('loc2', data.loc2)
-                        if (data.loc3) fd.append('loc3', data.loc3)
-                        fd.append('applicationFee', String(LOCATION_FEES[data.loc1] ?? 0))
-                        if (data.idCard)             fd.append('idCard',             data.idCard)
-                        if (data.dischargeBook)      fd.append('dischargeBook',      data.dischargeBook)
-                        if (data.policeVerification) fd.append('policeVerification', data.policeVerification)
-
-                        await saveProfile(fd)
-
-                        navigate('/candidate/payment', {
-                          state: {
-                            mobile:         data.mobile,
-                            fullName:       data.fullName,
-                            rank:           data.rank,
-                            force:          data.force,
-                            post:           data.post,
-                            loc1:           data.loc1,
-                            loc2:           data.loc2,
-                            loc3:           data.loc3,
-                            applicationFee: LOCATION_FEES[data.loc1] ?? 0,
-                            unit:           data.unit,
-                            retirementDate: data.retirementDate,
-                            otherPost:      data.otherPost,
-                            gunLicense:     data.gunLicense,
-                          },
-                        })
-                      } catch (err: any) {
-                        toast({ title: 'Could not save profile', description: err.message, variant: 'error' })
-                      } finally {
-                        setSaving(false)
-                      }
-                    }}
+                  <ReviewPaymentStep
+                    data={data}
+                    saving={saving}
+                    onProceed={handleProceed}
                     onGoBack={() => { setStep(3); window.scrollTo(0, 0); }}
                   />
                 )}
@@ -764,12 +1069,16 @@ export default function CandidateRegister() {
           </div>
         </div>
 
-        {/* ── Bottom continue bar (steps 1–3) ── */}
+        {/* Bottom continue bar — steps 1–3 only */}
         {step < 4 && (
-          <div className='fixed bottom-0 left-0 right-0 lg:sticky lg:bottom-auto lg:top-auto bg-white border-t border-gray-100 px-4 lg:px-8 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] lg:shadow-none'>
+          <div className='fixed bottom-0 left-0 right-0 lg:sticky lg:bottom-auto bg-white border-t border-gray-100 px-4 lg:px-8 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] lg:shadow-none'>
             <div className='max-w-3xl lg:max-w-none mx-auto'>
-              <Button size='lg' className='w-full lg:w-auto lg:min-w-[200px] rounded-xl text-sm font-bold gap-2' onClick={goNext}>
-                {step === 3 ? 'Continue to Payment' : 'Continue'}
+              <Button
+                size='lg'
+                className='w-full lg:w-auto lg:min-w-[200px] rounded-xl text-sm font-bold gap-2'
+                onClick={goNext}
+              >
+                {step === 3 ? 'Review & Continue' : 'Continue'}
                 <ChevronRight className='w-4 h-4' />
               </Button>
             </div>
