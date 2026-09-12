@@ -1038,7 +1038,7 @@ export default function CandidateRegister() {
             Documents private — not shared with employers
           </div>
           <div className='flex items-center gap-2 text-xs text-gray-500'>
-            <Shield className='w-3.5 h-3.5 text-[#F7A607] shrink-0' />
+            <img src='/DGR.png' alt='DGR' className='w-5 h-5 object-contain shrink-0' />
             DGR Empanelled Partner
           </div>
           <div className='flex items-center gap-2 text-xs text-gray-500'>

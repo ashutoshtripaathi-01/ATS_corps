@@ -135,7 +135,7 @@ export function EmployerAuthModal({ open, onClose, onBack, mode: initialMode }: 
               </div>
 
               <div className='inline-flex items-center gap-2 bg-[#F7A607]/15 border border-[#F7A607]/30 rounded-full px-3 py-1.5 mb-5 w-fit'>
-                <Shield className='w-3 h-3 text-[#F7A607]' />
+                <img src='/DGR.png' alt='DGR' className='w-4 h-4 object-contain shrink-0' />
                 <span className='text-[9px] font-bold text-[#F7A607] uppercase tracking-widest'>DGR Empanelled · Ministry of Defence</span>
               </div>
 
@@ -329,7 +329,7 @@ export function EmployerAuthModal({ open, onClose, onBack, mode: initialMode }: 
                     </div>
 
                     <div className='hidden lg:flex items-center gap-2 mt-6 pt-5 border-t border-gray-100'>
-                      <Shield className='w-3.5 h-3.5 text-gray-300 shrink-0' />
+                      <img src='/DGR.png' alt='DGR' className='w-5 h-5 object-contain shrink-0 opacity-60' />
                       <p className='text-[10px] text-gray-400 leading-relaxed'>
                         For verified recruiters only · DGR Empanelled Platform · Ministry of Defence
                       </p>

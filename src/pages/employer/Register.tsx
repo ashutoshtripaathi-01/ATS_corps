@@ -216,7 +216,7 @@ export default function EmployerRegister() {
         {/* Info block */}
         <div className="px-7 py-6 flex-1">
           <div className="inline-flex items-center gap-2 bg-[#F7A607]/15 border border-[#F7A607]/30 rounded-full px-3 py-1.5 mb-6">
-            <Shield className="w-3 h-3 text-[#F7A607]" />
+            <img src='/DGR.png' alt='DGR' className='w-4 h-4 object-contain shrink-0' />
             <span className="text-[9px] font-bold text-[#F7A607] uppercase tracking-widest">DGR Empanelled · Ministry of Defence</span>
           </div>
 
@@ -232,13 +232,16 @@ export default function EmployerRegister() {
           <ul className="space-y-3">
             {[
               { icon: Users,    text: 'Access 500+ verified ex-servicemen profiles' },
-              { icon: Shield,   text: 'DGR-empanelled — trusted by Govt. of India' },
+              { icon: null,     text: 'DGR-empanelled — trusted by Govt. of India', logo: '/DGR.png' },
               { icon: Star,     text: 'Pre-screened candidates with service records' },
               { icon: Zap,      text: 'Post jobs and fill positions in days, not weeks' },
-            ].map(({ icon: Icon, text }) => (
+            ].map(({ icon: Icon, text, logo }: { icon: any; text: string; logo?: string }) => (
               <li key={text} className="flex items-start gap-2.5">
                 <div className="w-6 h-6 rounded-lg bg-[#F7A607]/15 flex items-center justify-center shrink-0 mt-0.5">
-                  <Icon className="w-3 h-3 text-[#F7A607]" />
+                  {logo
+                    ? <img src={logo} alt='DGR' className='w-4 h-4 object-contain' />
+                    : <Icon className="w-3 h-3 text-[#F7A607]" />
+                  }
                 </div>
                 <span className="text-xs text-gray-400 leading-relaxed">{text}</span>
               </li>

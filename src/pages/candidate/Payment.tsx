@@ -466,7 +466,7 @@ export default function CandidatePayment() {
             <span className='text-xs text-gray-500'>256-bit SSL · Secured by Razorpay</span>
           </div>
           <div className='flex items-center gap-2'>
-            <Shield className='w-3.5 h-3.5 text-[#F7A607] shrink-0' />
+            <img src='/DGR.png' alt='DGR' className='w-5 h-5 object-contain shrink-0' />
             <span className='text-xs text-gray-500'>DGR Empanelled Partner</span>
           </div>
           <div className='flex items-center gap-2'>
