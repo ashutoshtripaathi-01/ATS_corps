@@ -184,6 +184,8 @@ router.post('/save-profile', requireAuth('candidate'), (req: Request, res: Respo
            id_card_path             = COALESCE($14, id_card_path),
            discharge_book_path      = COALESCE($15, discharge_book_path),
            police_verification_path = COALESCE($16, police_verification_path),
+           registration_ref         = COALESCE(registration_ref,
+                                        'ATS-' || to_char(NOW(),'YYYY') || '-' || LPAD(id::text,5,'0')),
            updated_at               = NOW()
          WHERE id = $17`,
         [
@@ -204,6 +206,48 @@ router.post('/save-profile', requireAuth('candidate'), (req: Request, res: Respo
       return res.status(500).json({ error: 'Failed to save profile', detail: e.message })
     }
   })
+})
+
+/* ── PATCH /update-draft ── text-only autosave (no files) ──────────── */
+router.patch('/update-draft', requireAuth('candidate'), async (req: Request, res: Response) => {
+  try {
+    const candidateId = req.auth!.id
+    const {
+      force, rank, fullName, mobile, unit, retirementDate,
+      post, otherPost, gunLicense, loc1, loc2, loc3,
+    } = req.body as Record<string, string | undefined>
+
+    await pool.query(
+      `UPDATE candidates SET
+         full_name       = CASE WHEN length(COALESCE($1 ,'')) > 0 THEN $1  ELSE full_name       END,
+         force           = CASE WHEN length(COALESCE($2 ,'')) > 0 THEN $2  ELSE force           END,
+         rank            = CASE WHEN length(COALESCE($3 ,'')) > 0 THEN $3  ELSE rank            END,
+         mobile          = CASE WHEN $4 ~ '^[6-9][0-9]{9}$'       THEN $4  ELSE mobile          END,
+         unit            = CASE WHEN length(COALESCE($5 ,'')) > 0 THEN $5  ELSE unit            END,
+         retirement_date = CASE WHEN $6 ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN $6::DATE
+                                ELSE retirement_date END,
+         post            = CASE WHEN length(COALESCE($7 ,'')) > 0 THEN $7  ELSE post            END,
+         other_post      = NULLIF($8 ,''),
+         gun_license     = NULLIF($9 ,''),
+         loc1            = CASE WHEN length(COALESCE($10,'')) > 0 THEN $10 ELSE loc1            END,
+         loc2            = NULLIF($11,''),
+         loc3            = NULLIF($12,''),
+         updated_at      = NOW()
+       WHERE id = $13`,
+      [
+        fullName ?? '', force ?? '', rank ?? '', mobile ?? '',
+        unit     ?? '', retirementDate ?? '', post ?? '',
+        otherPost  ?? '', gunLicense ?? '',
+        loc1 ?? '', loc2 ?? '', loc3 ?? '',
+        candidateId,
+      ],
+    )
+    return res.json({ success: true })
+  } catch (e: any) {
+    // Autosave errors should not crash the UI — return a structured error
+    console.error('[update-draft]', e.message)
+    return res.status(400).json({ error: e.message })
+  }
 })
 
 /* ── POST /register ─────────────────────────────────────────────────── */

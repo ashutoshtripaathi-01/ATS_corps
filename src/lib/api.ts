@@ -102,6 +102,16 @@ export const saveProfile = (formData: FormData) =>
     { method: 'POST', body: formData },
   )
 
+export const updateDraft = (data: {
+  force?: string; rank?: string; fullName?: string; mobile?: string;
+  unit?: string; retirementDate?: string; post?: string; otherPost?: string;
+  gunLicense?: string; loc1?: string; loc2?: string; loc3?: string;
+}) =>
+  req<{ success: boolean }>(
+    `${API_BASE}/candidates/update-draft`,
+    { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) },
+  )
+
 export const registerCandidate = (formData: FormData) =>
   req<{ success: boolean; candidate: any; accessToken: string }>(
     `${API_BASE}/candidates/register`,

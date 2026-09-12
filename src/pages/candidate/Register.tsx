@@ -1,33 +1,16 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ChevronLeft,
-  ChevronRight,
-  CheckCircle,
-  Shield,
-  Anchor,
-  Plane,
-  Star,
-  CreditCard,
-  MapPin,
-  Briefcase,
-  FileText,
-  Calendar,
-  AlertCircle,
-  X,
-  Zap,
-  Upload,
-  ArrowLeft,
-  Lock,
-  Award,
-  RefreshCw,
+  ChevronLeft, ChevronRight, CheckCircle, Shield, Anchor, Plane, Star,
+  CreditCard, MapPin, Briefcase, FileText, Calendar, AlertCircle, X, Zap,
+  Upload, ArrowLeft, Lock, Award, RefreshCw, Pencil, Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/useAppStore';
 import { toast } from '@/hooks/useToast';
 import { BRAND } from '@/constants';
-import { saveProfile } from '@/lib/api';
+import { saveProfile, updateDraft, getCandidateProfile } from '@/lib/api';
 import companyLogo from '@/assets/company logo.png';
 
 /* ─── Data ───────────────────────────────────────────────────────────────── */
@@ -51,18 +34,14 @@ const RANKS: Record<Force, string[]> = {
 const POSTS    = ['Any', 'Guard Unarmed', 'Gunman', 'Security Supervisor', 'Other'] as const;
 const LOCATIONS = ['Upper Assam', 'Guwahati & Around', 'Lower Assam'] as const;
 
-// Registration fee — one-time, same regardless of location
-const LOCATION_FEES: Record<string, number> = {
-  'Upper Assam': 1, 'Guwahati & Around': 1, 'Lower Assam': 1,
-};
-const REGISTRATION_FEE = 1; // ₹1 live-testing fee; same for all locations
+const REGISTRATION_FEE = 1;
 
 /* ─── Step metadata ───────────────────────────────────────────────────────── */
 const STEPS = [
-  { label: 'Personal & Service',       shortLabel: 'Personal',  desc: 'Force, rank & personal details' },
-  { label: 'Documents & Verification', shortLabel: 'Documents', desc: 'Service documents & verification' },
+  { label: 'Personal & Service',       shortLabel: 'Personal',   desc: 'Force, rank & personal details' },
+  { label: 'Documents & Verification', shortLabel: 'Documents',  desc: 'Service documents & verification' },
   { label: 'Job Preferences',          shortLabel: 'Preferences', desc: 'Preferred roles & locations' },
-  { label: 'Review & Payment',         shortLabel: 'Review',    desc: 'Review your details & complete registration' },
+  { label: 'Review & Payment',         shortLabel: 'Review',     desc: 'Review your details & complete registration' },
 ];
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -77,6 +56,32 @@ const INITIAL: FormState = {
   retirementDate: '', dischargeBook: null, policeVerification: null,
   post: 'Any', gunLicense: '', otherPost: '', loc1: '', loc2: '', loc3: '',
 };
+
+interface ServerProfile {
+  force: string | null; rank: string | null; full_name: string | null;
+  mobile: string | null; unit: string | null; retirement_date: string | null;
+  post: string | null; other_post: string | null; gun_license: string | null;
+  loc1: string | null; loc2: string | null; loc3: string | null;
+  id_card_path: string | null; discharge_book_path: string | null;
+  police_verification_path: string | null; payment_status: string;
+}
+
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
+/* ─── Helpers ─────────────────────────────────────────────────────────────── */
+function getResumeStep(p: ServerProfile): number {
+  if (!p.mobile && !p.force && !p.full_name) return 1;
+  if (!p.id_card_path || !p.discharge_book_path) return 2;
+  if (!p.loc1) return 3;
+  return 4;
+}
+
+function formatDate(iso: string): string {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch { return iso; }
+}
 
 /* ─── Shared atoms ───────────────────────────────────────────────────────── */
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
@@ -157,12 +162,15 @@ function SelectInput({
 /* ─── Document upload card ────────────────────────────────────────────────── */
 function DocUpload({
   label, required, optional, description, file, onChange, accept = 'image/*,.pdf',
+  serverUploaded = false,
 }: {
   label: string; required?: boolean; optional?: boolean; description?: string;
   file: File | null; onChange: (f: File | null) => void; accept?: string;
+  serverUploaded?: boolean;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const sizeMB = file ? (file.size / (1024 * 1024)).toFixed(1) : null;
+  const isUploaded = !!file || serverUploaded;
 
   return (
     <div className='bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm'>
@@ -170,20 +178,20 @@ function DocUpload({
       <div className='flex items-start justify-between px-4 pt-4 pb-3 border-b border-gray-50'>
         <div className='flex items-center gap-2.5'>
           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0
-            ${required ? 'bg-[#F7A607]/10' : 'bg-gray-100'}`}>
-            <FileText className={`w-4 h-4 ${required ? 'text-[#F7A607]' : 'text-gray-400'}`} />
+            ${isUploaded ? 'bg-green-50' : required ? 'bg-[#F7A607]/10' : 'bg-gray-100'}`}>
+            <FileText className={`w-4 h-4 ${isUploaded ? 'text-green-600' : required ? 'text-[#F7A607]' : 'text-gray-400'}`} />
           </div>
           <div>
             <p className='text-sm font-semibold text-gray-900 leading-tight'>{label}</p>
             {description && <p className='text-xs text-gray-500 mt-0.5'>{description}</p>}
           </div>
         </div>
-        {required && (
+        {required && !isUploaded && (
           <span className='text-[10px] font-bold text-[#F7A607] bg-[#F7A607]/10 px-2 py-0.5 rounded-full shrink-0 ml-2 mt-0.5'>
             Required
           </span>
         )}
-        {optional && (
+        {optional && !isUploaded && (
           <span className='text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full shrink-0 ml-2 mt-0.5'>
             Optional
           </span>
@@ -202,45 +210,49 @@ function DocUpload({
         />
 
         {file ? (
-          /* Uploaded state */
+          /* New file selected */
           <div className='flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl'>
             <div className='w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center shrink-0'>
-              <CheckCircle className='w-4.5 h-4.5 text-green-600' />
+              <CheckCircle className='w-4 h-4 text-green-600' />
             </div>
             <div className='flex-1 min-w-0'>
               <p className='text-sm font-semibold text-gray-900 truncate'>{file.name}</p>
               <p className='text-xs text-gray-500 mt-0.5'>{sizeMB} MB · Selected</p>
             </div>
             <div className='flex items-center gap-1.5 shrink-0'>
-              <button
-                type='button'
-                onClick={() => ref.current?.click()}
+              <button type='button' onClick={() => ref.current?.click()}
                 aria-label={`Replace ${label}`}
-                className='flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200
-                  rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors'
-              >
+                className='flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors'>
                 <RefreshCw className='w-3 h-3' /> Replace
               </button>
-              <button
-                type='button'
-                onClick={() => onChange(null)}
-                aria-label={`Remove ${label}`}
-                className='p-1.5 rounded-lg hover:bg-red-50 transition-colors text-gray-400 hover:text-red-500'
-              >
+              <button type='button' onClick={() => onChange(null)} aria-label={`Remove ${label}`}
+                className='p-1.5 rounded-lg hover:bg-red-50 transition-colors text-gray-400 hover:text-red-500'>
                 <X className='w-3.5 h-3.5' />
               </button>
             </div>
           </div>
+        ) : serverUploaded ? (
+          /* Already on server */
+          <div className='flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl'>
+            <div className='w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center shrink-0'>
+              <CheckCircle className='w-4 h-4 text-green-600' />
+            </div>
+            <div className='flex-1 min-w-0'>
+              <p className='text-sm font-semibold text-gray-900'>Already uploaded</p>
+              <p className='text-xs text-gray-500 mt-0.5'>Securely on record · uploaded previously</p>
+            </div>
+            <button type='button' onClick={() => ref.current?.click()}
+              aria-label={`Replace ${label}`}
+              className='shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors'>
+              <RefreshCw className='w-3 h-3' /> Replace
+            </button>
+          </div>
         ) : (
-          /* Empty state */
-          <button
-            type='button'
-            onClick={() => ref.current?.click()}
-            aria-label={`Upload ${label}`}
+          /* Empty — upload prompt */
+          <button type='button' onClick={() => ref.current?.click()} aria-label={`Upload ${label}`}
             className='w-full flex items-center gap-4 px-4 py-4 bg-gray-50 border border-dashed border-gray-300 rounded-xl
               hover:bg-gray-100 hover:border-[#F7A607]/50 active:scale-[0.99] transition-all text-left focus-visible:outline-none
-              focus-visible:ring-2 focus-visible:ring-[#F7A607]/40'
-          >
+              focus-visible:ring-2 focus-visible:ring-[#F7A607]/40'>
             <div className='w-10 h-10 bg-white border border-gray-200 rounded-xl flex items-center justify-center shrink-0 shadow-sm'>
               <Upload className='w-4 h-4 text-gray-500' />
             </div>
@@ -251,6 +263,51 @@ function DocUpload({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ─── Review section atoms ───────────────────────────────────────────────── */
+function ReviewSection({
+  title, children, onEdit, editLabel = 'Edit',
+}: {
+  title: string; children: React.ReactNode; onEdit: () => void; editLabel?: string;
+}) {
+  return (
+    <div className='bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden'>
+      <div className='flex items-center justify-between px-5 py-3.5 border-b border-gray-50 bg-gray-50/60'>
+        <p className='text-[10px] font-bold text-gray-500 uppercase tracking-widest'>{title}</p>
+        <button type='button' onClick={onEdit}
+          className='flex items-center gap-1.5 text-xs font-semibold text-[#F7A607] hover:text-[#d99400] transition-colors'>
+          <Pencil className='w-3 h-3' />{editLabel}
+        </button>
+      </div>
+      <div className='px-5 py-4 space-y-3'>{children}</div>
+    </div>
+  );
+}
+
+function ReviewRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className='flex justify-between items-start gap-4 py-0.5'>
+      <span className='text-xs text-gray-400 shrink-0 mt-0.5'>{label}</span>
+      <span className='text-sm font-semibold text-gray-900 text-right max-w-[60%] break-words'>{value || '—'}</span>
+    </div>
+  );
+}
+
+function DocStatusRow({ label, uploaded, optional }: { label: string; uploaded: boolean; optional?: boolean }) {
+  return (
+    <div className='flex items-center gap-3'>
+      {uploaded
+        ? <CheckCircle className='w-4 h-4 text-green-500 shrink-0' />
+        : <div className='w-4 h-4 rounded-full border-2 border-dashed border-gray-300 shrink-0' />
+      }
+      <span className={`text-sm flex-1 leading-tight ${uploaded ? 'text-gray-800 font-medium' : 'text-gray-400'}`}>
+        {label}
+      </span>
+      {!uploaded && optional  && <span className='text-xs text-gray-400 shrink-0 italic'>Optional</span>}
+      {!uploaded && !optional && <span className='text-xs text-amber-500 shrink-0 font-semibold'>Required</span>}
     </div>
   );
 }
@@ -267,7 +324,6 @@ function PersonalServiceStep({
 }) {
   return (
     <div className='space-y-6 pt-2 pb-8'>
-      {/* Section intro */}
       <div>
         <h2 className='text-lg font-extrabold text-gray-900 leading-tight' style={{ fontFamily: 'Plus Jakarta Sans' }}>
           Tell us about your service
@@ -284,29 +340,22 @@ function PersonalServiceStep({
         </p>
         <div className='grid grid-cols-2 lg:grid-cols-4 gap-2'>
           {(FORCES as unknown as Force[]).map((f) => {
-            const meta     = FORCE_META[f];
-            const Icon     = meta.icon;
+            const meta = FORCE_META[f];
+            const Icon = meta.icon;
             const selected = data.force === f;
             return (
-              <button
-                key={f}
-                type='button'
+              <button key={f} type='button'
                 onClick={() => { update('force', f); update('rank', ''); }}
                 aria-pressed={selected}
                 className={`flex items-center gap-3 px-3 py-3.5 rounded-xl border-2 text-left transition-all active:scale-[0.98]
                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7A607]/40
-                  ${selected
-                    ? 'border-[#F7A607] bg-[#F7A607]/5'
-                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
-              >
+                  ${selected ? 'border-[#F7A607] bg-[#F7A607]/5' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}>
                 <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0
                   ${selected ? 'bg-[#F7A607]/15' : 'bg-gray-100'}`}>
                   <Icon className={`w-4 h-4 ${selected ? 'text-[#F7A607]' : meta.color}`} />
                 </div>
                 <div className='min-w-0'>
-                  <p className={`text-sm font-semibold leading-tight ${selected ? 'text-[#292e31]' : 'text-gray-800'}`}>
-                    {f}
-                  </p>
+                  <p className={`text-sm font-semibold leading-tight ${selected ? 'text-[#292e31]' : 'text-gray-800'}`}>{f}</p>
                   <p className='text-[10px] text-gray-400 truncate mt-0.5'>{meta.description}</p>
                 </div>
               </button>
@@ -319,10 +368,8 @@ function PersonalServiceStep({
       {/* Rank */}
       <div>
         <SelectInput
-          label='Rank / Designation'
-          required
-          value={data.rank}
-          onChange={(v) => update('rank', v)}
+          label='Rank / Designation' required
+          value={data.rank} onChange={(v) => update('rank', v)}
           placeholder={data.force ? 'Select your rank' : 'Select a force first'}
           options={data.force ? RANKS[data.force] : []}
           disabled={!data.force}
@@ -333,16 +380,10 @@ function PersonalServiceStep({
       {/* Full Name + Mobile — 2-col on desktop */}
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
         <div>
-          <TextInput
-            label='Full Name'
-            required
-            placeholder='As per service records'
-            value={data.fullName}
-            onChange={(v) => update('fullName', v)}
-          />
+          <TextInput label='Full Name' required placeholder='As per service records'
+            value={data.fullName} onChange={(v) => update('fullName', v)} />
           <FieldError msg={errors.fullName} />
         </div>
-
         <div>
           <label className='block text-sm font-medium text-gray-700 mb-1.5' htmlFor='mobile-input'>
             Mobile Number <span className='text-red-500'>*</span>
@@ -352,18 +393,12 @@ function PersonalServiceStep({
               <span className='text-base leading-none'>🇮🇳</span>
               <span className='text-sm font-semibold text-gray-700'>+91</span>
             </div>
-            <input
-              id='mobile-input'
-              type='tel'
-              inputMode='numeric'
-              maxLength={10}
-              placeholder='9876543210'
-              value={data.mobile}
+            <input id='mobile-input' type='tel' inputMode='numeric' maxLength={10}
+              placeholder='9876543210' value={data.mobile}
               onChange={(e) => update('mobile', e.target.value.replace(/\D/g, ''))}
               aria-label='Mobile number'
               className='flex-1 h-12 px-3 text-sm border border-gray-200 rounded-xl bg-white
-                focus:outline-none focus:ring-2 focus:ring-[#F7A607]/40 focus:border-[#F7A607] transition-all'
-            />
+                focus:outline-none focus:ring-2 focus:ring-[#F7A607]/40 focus:border-[#F7A607] transition-all' />
           </div>
           <FieldError msg={errors.mobile} />
         </div>
@@ -372,30 +407,21 @@ function PersonalServiceStep({
       {/* Unit + Retirement date — 2-col on desktop */}
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
         <div>
-          <TextInput
-            label='Unit / Regiment'
-            required
-            placeholder='e.g. 4 ASSAM RIFLES'
-            value={data.unit}
-            onChange={(v) => update('unit', v)}
-          />
+          <TextInput label='Unit / Regiment' required placeholder='e.g. 4 ASSAM RIFLES'
+            value={data.unit} onChange={(v) => update('unit', v)} />
           <FieldError msg={errors.unit} />
         </div>
-
         <div>
           <FieldLabel required>Date of Retirement</FieldLabel>
           <div className='relative'>
             <Calendar className='absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none' />
-            <input
-              type='date'
-              value={data.retirementDate}
+            <input type='date' value={data.retirementDate}
               onChange={(e) => update('retirementDate', e.target.value)}
               max={new Date().toISOString().split('T')[0]}
               aria-label='Date of retirement'
               className={`w-full h-12 rounded-xl border border-gray-200 bg-white text-sm outline-none
                 transition-all focus:border-[#F7A607] focus:ring-2 focus:ring-[#F7A607]/10 pl-10 pr-4
-                ${data.retirementDate ? 'text-gray-900' : 'text-gray-400'}`}
-            />
+                ${data.retirementDate ? 'text-gray-900' : 'text-gray-400'}`} />
           </div>
           <FieldError msg={errors.retirementDate} />
         </div>
@@ -408,15 +434,15 @@ function PersonalServiceStep({
    STEP 2 — Documents & Verification
 ══════════════════════════════════════════════════════════════════════════ */
 function DocumentsVerificationStep({
-  data, update, errors,
+  data, update, errors, serverProfile,
 }: {
   data: FormState;
   update: (k: keyof FormState, v: any) => void;
   errors: Partial<Record<keyof FormState, string>>;
+  serverProfile: ServerProfile | null;
 }) {
   return (
     <div className='space-y-6 pt-2 pb-8'>
-      {/* Section intro */}
       <div>
         <h2 className='text-lg font-extrabold text-gray-900 leading-tight' style={{ fontFamily: 'Plus Jakarta Sans' }}>
           Upload your service documents
@@ -426,7 +452,6 @@ function DocumentsVerificationStep({
         </p>
       </div>
 
-      {/* Document security note — only factual claims */}
       <div className='flex gap-3 p-4 bg-gray-50 border border-gray-200 rounded-xl'>
         <Lock className='w-4 h-4 text-gray-500 shrink-0 mt-0.5' />
         <div>
@@ -438,47 +463,30 @@ function DocumentsVerificationStep({
         </div>
       </div>
 
-      {/* Required documents */}
       <div className='space-y-3'>
         <p className='text-xs font-bold text-gray-500 uppercase tracking-widest'>Required Documents</p>
-
-        {/* 1. Military Identity Card — moved here from Step 1 */}
         <div>
-          <DocUpload
-            label='Military / Ex-Serviceman Identity Card'
-            description='Front side — clear photo or scanned copy'
-            required
-            file={data.idCard}
-            onChange={(f) => update('idCard', f)}
-          />
+          <DocUpload label='Military / Ex-Serviceman Identity Card'
+            description='Front side — clear photo or scanned copy' required
+            file={data.idCard} onChange={(f) => update('idCard', f)}
+            serverUploaded={!!serverProfile?.id_card_path} />
           <FieldError msg={errors.idCard} />
         </div>
-
-        {/* 2. Discharge Book */}
         <div>
-          <DocUpload
-            label='Discharge Book'
-            description='Army / Navy / Air Force / Para Military Discharge Book'
-            required
-            file={data.dischargeBook}
-            onChange={(f) => update('dischargeBook', f)}
-          />
+          <DocUpload label='Discharge Book'
+            description='Army / Navy / Air Force / Para Military Discharge Book' required
+            file={data.dischargeBook} onChange={(f) => update('dischargeBook', f)}
+            serverUploaded={!!serverProfile?.discharge_book_path} />
           <FieldError msg={errors.dischargeBook} />
         </div>
       </div>
 
-      {/* Optional documents */}
       <div className='space-y-3'>
         <p className='text-xs font-bold text-gray-500 uppercase tracking-widest'>Optional Documents</p>
-        <div>
-          <DocUpload
-            label='Police Verification Certificate'
-            description='Clearance certificate from your home district police · Uploading this may help speed up verification.'
-            optional
-            file={data.policeVerification}
-            onChange={(f) => update('policeVerification', f)}
-          />
-        </div>
+        <DocUpload label='Police Verification Certificate'
+          description='Clearance certificate from your home district police · Uploading this may help speed up verification.'
+          optional file={data.policeVerification} onChange={(f) => update('policeVerification', f)}
+          serverUploaded={!!serverProfile?.police_verification_path} />
       </div>
     </div>
   );
@@ -499,7 +507,6 @@ function JobPreferencesStep({
 
   return (
     <div className='space-y-6 pt-2 pb-8'>
-      {/* Section intro */}
       <div>
         <h2 className='text-lg font-extrabold text-gray-900 leading-tight' style={{ fontFamily: 'Plus Jakarta Sans' }}>
           Tell us where and what you want to work
@@ -510,30 +517,21 @@ function JobPreferencesStep({
       </div>
 
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-5 items-start'>
-
         {/* Role preference */}
         <div className='bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4'>
           <div className='flex items-center gap-2'>
             <Briefcase className='w-4 h-4 text-[#F7A607]' />
             <p className='text-sm font-bold text-gray-900'>What type of role are you interested in?</p>
           </div>
-
           <div className='space-y-2' role='radiogroup' aria-label='Job role preference'>
             {(POSTS as unknown as string[]).map((post) => {
               const active = data.post === post;
               return (
-                <button
-                  key={post}
-                  type='button'
-                  role='radio'
-                  aria-checked={active}
+                <button key={post} type='button' role='radio' aria-checked={active}
                   onClick={() => update('post', post)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all active:scale-[0.99]
                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7A607]/40
-                    ${active
-                      ? 'border-[#F7A607] bg-[#F7A607]/5'
-                      : 'border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-white'}`}
-                >
+                    ${active ? 'border-[#F7A607] bg-[#F7A607]/5' : 'border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-white'}`}>
                   <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all
                     ${active ? 'border-[#F7A607] bg-[#F7A607]' : 'border-gray-300 bg-white'}`}>
                     {active && <div className='w-1.5 h-1.5 bg-white rounded-full' />}
@@ -544,29 +542,18 @@ function JobPreferencesStep({
             })}
           </div>
           <FieldError msg={errors.post} />
-
           <AnimatePresence>
             {data.post === 'Gunman' && (
               <motion.div key='gun' initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className='overflow-hidden'>
-                <TextInput
-                  label='Gun / Weapon License Number'
-                  required
-                  placeholder='Enter license number'
-                  value={data.gunLicense}
-                  onChange={(v) => update('gunLicense', v)}
-                />
+                <TextInput label='Gun / Weapon License Number' required placeholder='Enter license number'
+                  value={data.gunLicense} onChange={(v) => update('gunLicense', v)} />
                 <FieldError msg={errors.gunLicense} />
               </motion.div>
             )}
             {data.post === 'Other' && (
               <motion.div key='other' initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className='overflow-hidden'>
-                <TextInput
-                  label='Specify Role'
-                  required
-                  placeholder='Describe the role you are interested in'
-                  value={data.otherPost}
-                  onChange={(v) => update('otherPost', v)}
-                />
+                <TextInput label='Specify Role' required placeholder='Describe the role you are interested in'
+                  value={data.otherPost} onChange={(v) => update('otherPost', v)} />
                 <FieldError msg={errors.otherPost} />
               </motion.div>
             )}
@@ -593,9 +580,7 @@ function JobPreferencesStep({
             return (
               <div key={key} className='space-y-1.5'>
                 <div className='flex items-center gap-2'>
-                  <span className={`w-5 h-5 rounded-full text-[10px] font-extrabold flex items-center justify-center shrink-0 ${numBg}`}>
-                    {num}
-                  </span>
+                  <span className={`w-5 h-5 rounded-full text-[10px] font-extrabold flex items-center justify-center shrink-0 ${numBg}`}>{num}</span>
                   <span className='text-xs font-semibold text-gray-600'>{label}</span>
                 </div>
                 <SelectInput
@@ -614,20 +599,14 @@ function JobPreferencesStep({
             );
           })}
 
-          {/* Registration fee notice — correct terminology */}
           {data.loc1 && (
-            <motion.div
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              className='flex items-center justify-between p-3.5 bg-amber-50 border border-amber-100 rounded-xl mt-2'
-            >
+            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+              className='flex items-center justify-between p-3.5 bg-amber-50 border border-amber-100 rounded-xl mt-2'>
               <div>
                 <p className='text-xs font-semibold text-gray-700'>Registration Fee</p>
                 <p className='text-[11px] text-gray-500 mt-0.5'>One-time · non-refundable</p>
               </div>
-              <div className='text-right'>
-                <p className='text-xl font-extrabold text-[#F7A607]'>₹{REGISTRATION_FEE.toLocaleString()}</p>
-              </div>
+              <p className='text-xl font-extrabold text-[#F7A607]'>₹{REGISTRATION_FEE.toLocaleString()}</p>
             </motion.div>
           )}
         </div>
@@ -637,17 +616,22 @@ function JobPreferencesStep({
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   STEP 4 — Review & Payment
+   STEP 4 — Review & Payment (full redesign)
 ══════════════════════════════════════════════════════════════════════════ */
 function ReviewPaymentStep({
-  data, onProceed, onGoBack, saving,
+  data, serverProfile, onProceed, onEdit, onGoBack, saving,
 }: {
   data: FormState;
+  serverProfile: ServerProfile | null;
   onProceed: () => void;
+  onEdit: (step: number) => void;
   onGoBack: () => void;
   saving?: boolean;
 }) {
-  const fee = LOCATION_FEES[data.loc1] ?? REGISTRATION_FEE;
+  const fee = REGISTRATION_FEE;
+  const docIdCard    = !!(data.idCard    || serverProfile?.id_card_path);
+  const docDischarge = !!(data.dischargeBook || serverProfile?.discharge_book_path);
+  const docPolice    = !!(data.policeVerification || serverProfile?.police_verification_path);
 
   if (!data.loc1) {
     return (
@@ -656,14 +640,9 @@ function ReviewPaymentStep({
           <MapPin className='w-7 h-7 text-amber-500' />
         </div>
         <p className='font-semibold text-gray-900'>No location selected</p>
-        <p className='text-sm text-gray-500 max-w-xs'>
-          Go back to Step 3 and choose your preferred posting locations.
-        </p>
-        <button
-          type='button'
-          onClick={onGoBack}
-          className='flex items-center gap-2 text-sm font-semibold text-[#F7A607] hover:underline focus-visible:outline-none'
-        >
+        <p className='text-sm text-gray-500 max-w-xs'>Go back to Job Preferences and choose your preferred posting locations.</p>
+        <button type='button' onClick={onGoBack}
+          className='flex items-center gap-2 text-sm font-semibold text-[#F7A607] hover:underline focus-visible:outline-none'>
           <ArrowLeft className='w-4 h-4' /> Back to Job Preferences
         </button>
       </div>
@@ -671,98 +650,67 @@ function ReviewPaymentStep({
   }
 
   return (
-    <div className='space-y-5 pt-2 pb-8'>
+    <div className='space-y-4 pt-2 pb-8'>
+      {/* Heading */}
       <div>
         <h2 className='text-lg font-extrabold text-gray-900 leading-tight' style={{ fontFamily: 'Plus Jakarta Sans' }}>
-          Review your application
+          Review your registration
         </h2>
         <p className='text-sm text-gray-500 mt-1'>
-          Check your details below, then proceed to payment to complete your registration.
+          Please confirm your details below before completing payment.
         </p>
       </div>
 
-      <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
+      {/* Personal & Service */}
+      <ReviewSection title='Personal & Service' onEdit={() => onEdit(1)}>
+        <ReviewRow label='Full Name'          value={data.fullName} />
+        <ReviewRow label='Mobile'             value={data.mobile ? `+91 ${data.mobile}` : ''} />
+        <ReviewRow label='Armed Force'        value={data.force} />
+        <ReviewRow label='Rank'               value={data.rank} />
+        <ReviewRow label='Unit / Regiment'    value={data.unit} />
+        <ReviewRow label='Date of Retirement' value={data.retirementDate ? formatDate(data.retirementDate) : ''} />
+      </ReviewSection>
 
-        {/* Application summary */}
-        <div className='bg-[#292e31] rounded-2xl p-5 text-white'>
-          {/* Fee */}
-          <div className='mb-4'>
-            <p className='text-xs text-gray-400 uppercase tracking-wider mb-1'>Registration Fee</p>
-            <div className='flex items-baseline gap-1.5'>
-              <span className='text-4xl font-black text-[#F7A607]'>₹{fee.toLocaleString()}</span>
-              <span className='text-sm text-gray-400'>one-time</span>
-            </div>
-            <p className='text-xs text-gray-500 mt-1'>Non-refundable · Secured by Razorpay</p>
-          </div>
+      {/* Documents */}
+      <ReviewSection title='Documents' onEdit={() => onEdit(2)} editLabel='Review Documents'>
+        <DocStatusRow label='Military / Ex-Serviceman Identity Card' uploaded={docIdCard} />
+        <DocStatusRow label='Discharge Book'                         uploaded={docDischarge} />
+        <DocStatusRow label='Police Verification Certificate'        uploaded={docPolice} optional />
+      </ReviewSection>
 
-          <div className='h-px bg-white/10 mb-4' />
+      {/* Job Preferences */}
+      <ReviewSection title='Job Preferences' onEdit={() => onEdit(3)}>
+        <ReviewRow label='Preferred Role' value={data.post === 'Other' ? (data.otherPost || 'Other') : data.post} />
+        <ReviewRow label='1st Priority'   value={data.loc1} />
+        {data.loc2 && <ReviewRow label='2nd Priority' value={data.loc2} />}
+        {data.loc3 && <ReviewRow label='3rd Priority' value={data.loc3} />}
+      </ReviewSection>
 
-          {/* Summary rows */}
-          <p className='text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3'>Application Details</p>
-          <div className='space-y-2.5'>
-            {[
-              { label: 'Applicant',       value: data.fullName || '—' },
-              { label: 'Rank & Force',    value: `${data.rank}, ${data.force}` },
-              { label: 'Post Preference', value: data.post === 'Other' && data.otherPost ? data.otherPost : data.post },
-              { label: 'Priority 1',      value: data.loc1 },
-              ...(data.loc2 ? [{ label: 'Priority 2', value: data.loc2 }] : []),
-              ...(data.loc3 ? [{ label: 'Priority 3', value: data.loc3 }] : []),
-            ].map((r) => (
-              <div key={r.label} className='flex justify-between items-start gap-4'>
-                <span className='text-xs text-gray-400 shrink-0'>{r.label}</span>
-                <span className='text-xs font-semibold text-white text-right max-w-[55%] truncate'>{r.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Registration fee card — corrected terminology */}
-        <div className='bg-white border border-gray-100 rounded-2xl p-5 shadow-sm flex flex-col gap-4'>
+      {/* Registration Fee */}
+      <div className='bg-white border border-gray-100 rounded-2xl p-5 shadow-sm'>
+        <div className='flex items-center justify-between'>
           <div>
-            <p className='text-xs font-bold text-gray-500 uppercase tracking-widest mb-3'>Registration Fee</p>
-            <div className='flex items-center justify-between py-3 border border-[#F7A607]/20 bg-[#F7A607]/5 rounded-xl px-4'>
-              <div>
-                <p className='text-sm font-bold text-gray-900'>One-Time Registration</p>
-                <p className='text-xs text-gray-500 mt-0.5'>Covers all three preferred locations</p>
-              </div>
-              <p className='text-2xl font-extrabold text-[#F7A607]'>₹{fee.toLocaleString()}</p>
-            </div>
-            <p className='text-xs text-gray-400 mt-3 leading-relaxed'>
-              This is a one-time registration fee. You will not be charged separately for each preferred location.
-            </p>
+            <p className='text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1'>Registration Fee</p>
+            <p className='text-sm font-semibold text-gray-800'>One-time · covers all preferred locations</p>
+            <p className='text-xs text-gray-400 mt-1'>Non-refundable · Secured by Razorpay</p>
           </div>
-
-          <div className='mt-auto pt-3 border-t border-gray-50 space-y-1.5'>
-            <div className='flex items-center gap-2 text-xs text-gray-500'>
-              <Lock className='w-3.5 h-3.5 text-green-500 shrink-0' />
-              256-bit SSL · Secured by Razorpay
-            </div>
-            <div className='flex items-center gap-2 text-xs text-gray-500'>
-              <Shield className='w-3.5 h-3.5 text-[#F7A607] shrink-0' />
-              DGR Empanelled Partner
-            </div>
-          </div>
+          <p className='text-4xl font-black text-[#F7A607]'>₹{fee}</p>
         </div>
       </div>
 
-      <Button
-        size='lg'
-        className='w-full lg:max-w-xs rounded-xl text-sm font-bold gap-2.5 h-13'
-        onClick={onProceed}
-        disabled={saving}
-      >
+      {/* CTA */}
+      <Button size='lg' className='w-full rounded-xl text-sm font-bold gap-2.5 h-13'
+        onClick={onProceed} disabled={saving}>
         {saving ? (
-          <>
-            <div className='w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin' />
-            Saving…
-          </>
+          <><div className='w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin' />Saving…</>
         ) : (
-          <>
-            <CreditCard className='w-4 h-4' />
-            Proceed to Payment
-          </>
+          <><CreditCard className='w-4 h-4' />Confirm Details & Pay ₹{fee}</>
         )}
       </Button>
+
+      <p className='text-center text-xs text-gray-400 leading-relaxed'>
+        Secure payment powered by Razorpay · 256-bit SSL encryption
+      </p>
     </div>
   );
 }
@@ -771,19 +719,105 @@ function ReviewPaymentStep({
    MAIN PAGE
 ══════════════════════════════════════════════════════════════════════════ */
 export default function CandidateRegister() {
-  const navigate  = useNavigate();
-  const { user }  = useAppStore();
+  const navigate = useNavigate();
+  const { user } = useAppStore();
 
-  const [step,   setStep]   = useState(1);
-  const [data,   setData]   = useState<FormState>(INITIAL);
-  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-  const [saving, setSaving] = useState(false);
+  const [step,           setStep]           = useState(1);
+  const [data,           setData]           = useState<FormState>(INITIAL);
+  const [errors,         setErrors]         = useState<Partial<Record<keyof FormState, string>>>({});
+  const [saving,         setSaving]         = useState(false);
+  const [returnToReview, setReturnToReview] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [serverProfile,  setServerProfile]  = useState<ServerProfile | null>(null);
+  const [saveStatus,     setSaveStatus]     = useState<SaveStatus>('idle');
 
-  const update = (k: keyof FormState, v: any) => {
+  // Refs for autosave
+  const dataRef        = useRef(data);
+  const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const canAutosaveRef = useRef(false); // gates autosave until initial load is done
+
+  // Keep dataRef current
+  useEffect(() => { dataRef.current = data; }, [data]);
+
+  /* ── On mount: load existing profile ── */
+  useEffect(() => {
+    if (!user?.id) { setProfileLoading(false); return; }
+    getCandidateProfile(user.id)
+      .then((p: ServerProfile) => {
+        if (p.payment_status === 'paid') {
+          navigate('/candidate/dashboard', { replace: true });
+          return;
+        }
+        setServerProfile(p);
+        // Pre-populate text fields from server
+        setData({
+          force:           (p.force as Force) || '',
+          rank:            p.rank             || '',
+          fullName:        p.full_name        || '',
+          mobile:          p.mobile           || '',
+          unit:            p.unit             || '',
+          idCard:          null,               // File objects can't be restored
+          retirementDate:  p.retirement_date  ? p.retirement_date.split('T')[0] : '',
+          dischargeBook:   null,
+          policeVerification: null,
+          post:            p.post             || 'Any',
+          gunLicense:      p.gun_license      || '',
+          otherPost:       p.other_post       || '',
+          loc1:            p.loc1             || '',
+          loc2:            p.loc2             || '',
+          loc3:            p.loc3             || '',
+        });
+        setStep(getResumeStep(p));
+      })
+      .catch(() => { /* fresh start — keep INITIAL state */ })
+      .finally(() => {
+        setProfileLoading(false);
+        // Allow autosave to fire after a short delay (avoids saving on initial populate)
+        setTimeout(() => { canAutosaveRef.current = true; }, 200);
+      });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── Autosave trigger (debounced 800ms) ── */
+  const triggerAutosave = useCallback(() => {
+    if (!canAutosaveRef.current || !user?.id) return;
+    if (debounceRef.current)   clearTimeout(debounceRef.current);
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+
+    debounceRef.current = setTimeout(async () => {
+      setSaveStatus('saving');
+      try {
+        const d = dataRef.current;
+        await updateDraft({
+          force:          d.force          || undefined,
+          rank:           d.rank           || undefined,
+          fullName:       d.fullName       || undefined,
+          mobile:         d.mobile         || undefined,
+          unit:           d.unit           || undefined,
+          retirementDate: d.retirementDate || undefined,
+          post:           d.post           || undefined,
+          otherPost:      d.otherPost      || '',
+          gunLicense:     d.gunLicense     || '',
+          loc1:           d.loc1           || undefined,
+          loc2:           d.loc2           || '',
+          loc3:           d.loc3           || '',
+        });
+        setSaveStatus('saved');
+        savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 3000);
+      } catch {
+        setSaveStatus('error');
+      }
+    }, 800);
+  }, [user?.id]);
+
+  /* ── Field update + autosave for text fields ── */
+  const update = useCallback((k: keyof FormState, v: any) => {
     setData((p) => ({ ...p, [k]: v }));
     setErrors((p) => { const n = { ...p }; delete n[k]; return n; });
-  };
+    if (typeof v === 'string') triggerAutosave();
+  }, [triggerAutosave]);
 
+  /* ── Validation ── */
   const validate = (): boolean => {
     const e: Partial<Record<keyof FormState, string>> = {};
 
@@ -797,13 +831,15 @@ export default function CandidateRegister() {
     }
 
     if (step === 2) {
-      if (!data.idCard)       e.idCard       = 'Please upload your Ex-Serviceman Identity Card';
-      if (!data.dischargeBook) e.dischargeBook = 'Please upload your Discharge Book';
+      const idOk  = !!(data.idCard       || serverProfile?.id_card_path);
+      const dbOk  = !!(data.dischargeBook || serverProfile?.discharge_book_path);
+      if (!idOk) e.idCard       = 'Please upload your Ex-Serviceman Identity Card';
+      if (!dbOk) e.dischargeBook = 'Please upload your Discharge Book';
     }
 
     if (step === 3) {
       if (data.post === 'Gunman' && !data.gunLicense.trim()) e.gunLicense = 'License number is required';
-      if (data.post === 'Other' && !data.otherPost.trim())   e.otherPost  = 'Please specify the role';
+      if (data.post === 'Other'  && !data.otherPost.trim())  e.otherPost  = 'Please specify the role';
       if (!data.loc1) e.loc1 = 'Please select your first preferred location';
       if (!data.loc2) e.loc2 = 'Please select your second preferred location';
       if (!data.loc3) e.loc3 = 'Please select your third preferred location';
@@ -819,14 +855,34 @@ export default function CandidateRegister() {
 
   const goNext = () => {
     if (!validate()) return;
-    setStep((s) => s + 1);
+    if (returnToReview) {
+      setReturnToReview(false);
+      setStep(4);
+    } else {
+      setStep((s) => s + 1);
+    }
     window.scrollTo(0, 0);
   };
+
   const goBack = () => {
+    if (returnToReview) {
+      setReturnToReview(false);
+      setStep(4);
+      window.scrollTo(0, 0);
+      return;
+    }
     if (step > 1) { setStep((s) => s - 1); window.scrollTo(0, 0); }
     else navigate('/');
   };
 
+  /* Edit from review: jump to a step and set returnToReview so "Continue" goes back to 4 */
+  const handleEditSection = (targetStep: number) => {
+    setReturnToReview(true);
+    setStep(targetStep);
+    window.scrollTo(0, 0);
+  };
+
+  /* Proceed to payment: save full profile then navigate */
   const handleProceed = async () => {
     setSaving(true);
     try {
@@ -843,7 +899,7 @@ export default function CandidateRegister() {
       fd.append('loc1', data.loc1);
       if (data.loc2) fd.append('loc2', data.loc2);
       if (data.loc3) fd.append('loc3', data.loc3);
-      fd.append('applicationFee', String(LOCATION_FEES[data.loc1] ?? REGISTRATION_FEE));
+      fd.append('applicationFee', String(REGISTRATION_FEE));
       if (data.idCard)             fd.append('idCard',             data.idCard);
       if (data.dischargeBook)      fd.append('dischargeBook',      data.dischargeBook);
       if (data.policeVerification) fd.append('policeVerification', data.policeVerification);
@@ -860,7 +916,7 @@ export default function CandidateRegister() {
           loc1:           data.loc1,
           loc2:           data.loc2,
           loc3:           data.loc3,
-          applicationFee: LOCATION_FEES[data.loc1] ?? REGISTRATION_FEE,
+          applicationFee: REGISTRATION_FEE,
           unit:           data.unit,
           retirementDate: data.retirementDate,
           otherPost:      data.otherPost,
@@ -874,16 +930,53 @@ export default function CandidateRegister() {
     }
   };
 
+  /* ── Profile loading screen ── */
+  if (profileLoading) {
+    return (
+      <div className='min-h-screen bg-gray-50 flex items-center justify-center'>
+        <div className='flex flex-col items-center gap-3'>
+          <Loader2 className='w-10 h-10 text-[#F7A607] animate-spin' />
+          <p className='text-sm font-semibold text-gray-600'>Loading your registration…</p>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Save status label ── */
+  const SaveStatusLabel = () => {
+    if (saveStatus === 'idle') return null;
+    return (
+      <div className='flex items-center gap-1.5' aria-live='polite'>
+        {saveStatus === 'saving' && (
+          <><div className='w-3 h-3 border border-gray-400 border-t-gray-600 rounded-full animate-spin shrink-0' />
+            <span className='text-[11px] text-gray-400'>Saving…</span></>
+        )}
+        {saveStatus === 'saved' && (
+          <><CheckCircle className='w-3.5 h-3.5 text-green-500 shrink-0' />
+            <span className='text-[11px] text-green-600 font-semibold'>Saved</span></>
+        )}
+        {saveStatus === 'error' && (
+          <><AlertCircle className='w-3.5 h-3.5 text-amber-500 shrink-0' />
+            <span className='text-[11px] text-amber-600'>Couldn't save</span></>
+        )}
+      </div>
+    );
+  };
+
+  const continueBtnLabel =
+    step === 4 ? null
+    : returnToReview ? 'Save & Return to Review'
+    : step === 3     ? 'Review & Continue'
+    :                  'Continue';
+
   return (
     <div className='min-h-screen lg:h-screen bg-gray-50 flex flex-col lg:flex-row overflow-hidden'>
 
       {/* ══════════════════════════════════════════════════════════
           LEFT SIDEBAR — desktop only
       ══════════════════════════════════════════════════════════ */}
-      <aside
-        className='hidden lg:flex lg:w-[260px] xl:w-[280px] shrink-0 bg-[#1a1d1f] flex-col sticky top-0 h-screen overflow-y-auto'
-        aria-label='Registration progress'
-      >
+      <aside className='hidden lg:flex lg:w-[260px] xl:w-[280px] shrink-0 bg-[#1a1d1f] flex-col sticky top-0 h-screen overflow-y-auto'
+        aria-label='Registration progress'>
         {/* Logo */}
         <div className='px-6 pt-7 pb-6 border-b border-white/8'>
           <div className='flex items-center gap-3'>
@@ -897,6 +990,14 @@ export default function CandidateRegister() {
           </div>
         </div>
 
+        {/* Resume indicator if returning */}
+        {serverProfile && (serverProfile.force || serverProfile.full_name) && (
+          <div className='mx-4 mt-4 px-3 py-2.5 bg-[#F7A607]/10 border border-[#F7A607]/20 rounded-xl'>
+            <p className='text-[10px] font-bold text-[#F7A607] uppercase tracking-wide'>Resuming registration</p>
+            <p className='text-xs text-gray-400 mt-0.5 truncate'>{serverProfile.full_name || 'Your draft is saved'}</p>
+          </div>
+        )}
+
         {/* Vertical step progress */}
         <div className='px-6 py-6 flex-1'>
           <p className='text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-5'>Your Registration</p>
@@ -908,13 +1009,11 @@ export default function CandidateRegister() {
               return (
                 <div key={label} className='flex gap-3'>
                   <div className='flex flex-col items-center'>
-                    <div
-                      className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-all
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-all
                         ${done   ? 'bg-green-500 text-white'
                         : active ? 'bg-[#F7A607] text-white ring-4 ring-[#F7A607]/20'
                         :          'bg-white/8 text-gray-500'}`}
-                      aria-current={active ? 'step' : undefined}
-                    >
+                      aria-current={active ? 'step' : undefined}>
                       {done ? <CheckCircle className='w-4 h-4' /> : s}
                     </div>
                     {i < STEPS.length - 1 && (
@@ -923,9 +1022,7 @@ export default function CandidateRegister() {
                   </div>
                   <div className='pb-8'>
                     <p className={`text-sm font-semibold leading-tight transition-all
-                      ${active ? 'text-white' : done ? 'text-green-400' : 'text-gray-500'}`}>
-                      {label}
-                    </p>
+                      ${active ? 'text-white' : done ? 'text-green-400' : 'text-gray-500'}`}>{label}</p>
                     <p className={`text-[10px] mt-0.5 leading-snug ${active ? 'text-gray-400' : 'text-gray-600'}`}>{desc}</p>
                   </div>
                 </div>
@@ -965,12 +1062,9 @@ export default function CandidateRegister() {
         {/* Sticky header */}
         <div className='sticky top-0 z-40 bg-white border-b border-gray-100'>
           <div className='flex items-center gap-3 px-4 lg:px-8 h-14 max-w-3xl lg:max-w-none mx-auto'>
-            <button
-              onClick={goBack}
-              aria-label='Go back'
+            <button onClick={goBack} aria-label='Go back'
               className='w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors shrink-0
-                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7A607]/40'
-            >
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7A607]/40'>
               <ChevronLeft className='w-4 h-4 text-gray-600' />
             </button>
 
@@ -986,25 +1080,24 @@ export default function CandidateRegister() {
               </div>
               {/* Desktop step info */}
               <div className='hidden lg:flex items-center gap-2'>
-                <span className='text-xs font-bold text-[#F7A607] uppercase tracking-wider'>
-                  Step {step} of 4
-                </span>
+                <span className='text-xs font-bold text-[#F7A607] uppercase tracking-wider'>Step {step} of 4</span>
                 <span className='text-gray-300'>·</span>
                 <span className='text-sm font-semibold text-gray-700'>{STEPS[step - 1].label}</span>
                 <span className='hidden xl:inline text-xs text-gray-400'>— {STEPS[step - 1].desc}</span>
               </div>
             </div>
 
-            <span className='text-xs font-semibold text-[#F7A607] shrink-0'>{step}/4</span>
+            {/* Save status indicator */}
+            <SaveStatusLabel />
+
+            <span className='text-xs font-semibold text-[#F7A607] shrink-0 ml-1'>{step}/4</span>
           </div>
 
           {/* Progress bar */}
           <div className='h-0.5 bg-gray-100'>
-            <motion.div
-              className='h-full bg-[#F7A607]'
+            <motion.div className='h-full bg-[#F7A607]'
               animate={{ width: `${(step / 4) * 100}%` }}
-              transition={{ duration: 0.35, ease: 'easeInOut' }}
-            />
+              transition={{ duration: 0.35, ease: 'easeInOut' }} />
           </div>
 
           {/* Mobile step tabs */}
@@ -1014,20 +1107,14 @@ export default function CandidateRegister() {
               const done   = s < step;
               const active = s === step;
               return (
-                <div
-                  key={shortLabel}
-                  role='tab'
-                  aria-selected={active}
+                <div key={shortLabel} role='tab' aria-selected={active}
                   aria-label={`Step ${s}: ${STEPS[i].label}`}
                   className={`flex-1 flex flex-col items-center py-2 gap-0.5 border-b-2 transition-all
-                    ${active ? 'border-[#F7A607]' : done ? 'border-green-400' : 'border-transparent'}`}
-                >
-                  <span className={`text-[11px] font-semibold
-                    ${active ? 'text-[#F7A607]' : done ? 'text-green-600' : 'text-gray-400'}`}>
+                    ${active ? 'border-[#F7A607]' : done ? 'border-green-400' : 'border-transparent'}`}>
+                  <span className={`text-[11px] font-semibold ${active ? 'text-[#F7A607]' : done ? 'text-green-600' : 'text-gray-400'}`}>
                     {done ? '✓' : s}
                   </span>
-                  <span className={`text-[9px] font-medium leading-tight text-center
-                    ${active ? 'text-[#F7A607]' : done ? 'text-green-600' : 'text-gray-400'}`}>
+                  <span className={`text-[9px] font-medium leading-tight text-center ${active ? 'text-[#F7A607]' : done ? 'text-green-600' : 'text-gray-400'}`}>
                     {shortLabel}
                   </span>
                 </div>
@@ -1040,28 +1127,18 @@ export default function CandidateRegister() {
         <div className='flex-1 overflow-y-auto pb-28 lg:pb-6'>
           <div className='px-4 lg:px-8 xl:px-12 max-w-3xl lg:max-w-none mx-auto'>
             <AnimatePresence mode='wait'>
-              <motion.div
-                key={step}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-              >
-                {step === 1 && (
-                  <PersonalServiceStep data={data} update={update} errors={errors} />
-                )}
-                {step === 2 && (
-                  <DocumentsVerificationStep data={data} update={update} errors={errors} />
-                )}
-                {step === 3 && (
-                  <JobPreferencesStep data={data} update={update} errors={errors} />
-                )}
+              <motion.div key={step}
+                initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}>
+                {step === 1 && <PersonalServiceStep data={data} update={update} errors={errors} />}
+                {step === 2 && <DocumentsVerificationStep data={data} update={update} errors={errors} serverProfile={serverProfile} />}
+                {step === 3 && <JobPreferencesStep data={data} update={update} errors={errors} />}
                 {step === 4 && (
                   <ReviewPaymentStep
-                    data={data}
-                    saving={saving}
-                    onProceed={handleProceed}
-                    onGoBack={() => { setStep(3); window.scrollTo(0, 0); }}
+                    data={data} serverProfile={serverProfile}
+                    saving={saving} onProceed={handleProceed}
+                    onEdit={handleEditSection}
+                    onGoBack={() => { setReturnToReview(false); setStep(3); window.scrollTo(0, 0); }}
                   />
                 )}
               </motion.div>
@@ -1073,12 +1150,9 @@ export default function CandidateRegister() {
         {step < 4 && (
           <div className='fixed bottom-0 left-0 right-0 lg:sticky lg:bottom-auto bg-white border-t border-gray-100 px-4 lg:px-8 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] lg:shadow-none'>
             <div className='max-w-3xl lg:max-w-none mx-auto'>
-              <Button
-                size='lg'
-                className='w-full lg:w-auto lg:min-w-[200px] rounded-xl text-sm font-bold gap-2'
-                onClick={goNext}
-              >
-                {step === 3 ? 'Review & Continue' : 'Continue'}
+              <Button size='lg' className='w-full lg:w-auto lg:min-w-[220px] rounded-xl text-sm font-bold gap-2'
+                onClick={goNext}>
+                {continueBtnLabel}
                 <ChevronRight className='w-4 h-4' />
               </Button>
             </div>

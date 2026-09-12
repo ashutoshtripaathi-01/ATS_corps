@@ -156,6 +156,9 @@ export async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_pay_attempts_candidate ON payment_attempts(candidate_id);
       CREATE INDEX IF NOT EXISTS idx_pay_attempts_order     ON payment_attempts(razorpay_order_id);
 
+      -- Phase 4 migration: stable registration reference number
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS registration_ref VARCHAR(30);
+
       CREATE INDEX IF NOT EXISTS idx_jobs_employer      ON jobs(employer_id);
       CREATE INDEX IF NOT EXISTS idx_jobs_status        ON jobs(status);
       CREATE INDEX IF NOT EXISTS idx_apps_candidate     ON applications(candidate_id);
