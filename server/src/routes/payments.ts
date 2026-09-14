@@ -10,8 +10,8 @@ import { audit, A } from '../lib/audit'
 
 const router = Router()
 
-// ₹1 registration fee for live testing (100 paise — Razorpay minimum)
-const REGISTRATION_FEE_PAISE = 100
+// ₹100 registration fee (10000 paise)
+const REGISTRATION_FEE_PAISE = 10000
 
 /* ── POST /api/payments/create-order ────────────────────────────────── */
 router.post('/create-order', requireAuth('candidate'), async (req: Request, res: Response) => {

@@ -34,7 +34,7 @@ const RANKS: Record<Force, string[]> = {
 const POSTS    = ['Any', 'Guard Unarmed', 'Gunman', 'Security Supervisor', 'Other'] as const;
 const LOCATIONS = ['Upper Assam', 'Guwahati & Around', 'Lower Assam'] as const;
 
-const REGISTRATION_FEE = 1;
+const REGISTRATION_FEE = 100;
 
 /* ─── Step metadata ───────────────────────────────────────────────────────── */
 const STEPS = [
