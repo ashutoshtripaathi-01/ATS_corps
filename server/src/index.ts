@@ -147,6 +147,35 @@ app.get('/api/health', (_req, res) =>
   }),
 )
 
+/* ── Error handling ──────────────────────────────────────────────────── */
+/*
+ * Catches anything a route forwards via next(err) — including rejections from
+ * async handlers wrapped with ah(). Without this an async failure became an
+ * unhandled rejection, which on Node 15+ kills the process: one bad query took
+ * the whole API down and the browser saw a bare 502 with an empty body.
+ */
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const isDbDown = ['ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN'].includes(err?.code)
+  console.error('[unhandled route error]', err?.code ?? '', err?.message ?? err)
+
+  if (res.headersSent) return
+
+  res.status(isDbDown ? 503 : 500).json({
+    error: isDbDown
+      ? 'The service is temporarily unavailable. Please try again in a moment.'
+      : 'Something went wrong. Please try again.',
+  })
+})
+
+/* Last-resort guards: log and keep serving rather than letting one failed
+   promise terminate the process and take every other user down with it. */
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason instanceof Error ? reason.message : reason)
+})
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err.message)
+})
+
 /* ── Start ───────────────────────────────────────────────────────────── */
 /*
  * The HTTP listener opens BEFORE the database is touched.

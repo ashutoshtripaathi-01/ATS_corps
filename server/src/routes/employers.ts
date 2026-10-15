@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit'
 import { pool } from '../db'
 import { signAccessToken, issueRefreshToken } from '../lib/tokens'
 import { requireAuth } from '../middleware/auth'
+import { ah } from '../lib/asyncRoute'
 import { body, email, mobile as mobileSchema, gst, pan, pincode } from '../lib/validate'
 import { audit, A } from '../lib/audit'
 
@@ -142,7 +143,7 @@ router.get('/admin/all', requireAuth('admin'), async (_req: Request, res: Respon
 })
 
 /* ── GET /:id ── (employer-owner or admin) ──────────────────────────── */
-router.get('/:id', requireAuth('employer', 'admin'), async (req: Request, res: Response) => {
+router.get('/:id', requireAuth('employer', 'admin'), ah(async (req: Request, res: Response) => {
   const auth = req.auth!
   if (auth.role === 'employer' && auth.id !== req.params.id)
     return res.status(403).json({ error: 'Access denied' })
@@ -150,7 +151,7 @@ router.get('/:id', requireAuth('employer', 'admin'), async (req: Request, res: R
   const result = await pool.query('SELECT * FROM employers WHERE id=$1', [req.params.id])
   if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' })
   return res.json(result.rows[0])
-})
+}))
 
 /* ── PATCH /:id ── (employer-owner or admin) ─────────────────────────── */
 router.patch('/:id', requireAuth('employer', 'admin'), async (req: Request, res: Response) => {

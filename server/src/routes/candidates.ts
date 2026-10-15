@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { pool } from '../db'
 import { signAccessToken, issueRefreshToken } from '../lib/tokens'
 import { requireAuth } from '../middleware/auth'
+import { ah } from '../lib/asyncRoute'
 import { body } from '../lib/validate'
 import { audit, A } from '../lib/audit'
 import { logActivity, setApplicationStatus, E } from '../lib/activity'
@@ -27,7 +28,7 @@ const emailPasswordSchema = z.object({
 })
 
 /* ── POST /create-account ───────────────────────────────────────────── */
-router.post('/create-account', authLimiter, body(emailPasswordSchema), async (req: Request, res: Response) => {
+router.post('/create-account', authLimiter, body(emailPasswordSchema), ah(async (req: Request, res: Response) => {
   const { email, password } = req.body as z.infer<typeof emailPasswordSchema>
   const normalEmail = email.toLowerCase()
 
@@ -53,10 +54,10 @@ router.post('/create-account', authLimiter, body(emailPasswordSchema), async (re
   })
 
   return res.status(201).json({ success: true, candidate: c, accessToken })
-})
+}))
 
 /* ── POST /login ────────────────────────────────────────────────────── */
-router.post('/login', authLimiter, body(emailPasswordSchema), async (req: Request, res: Response) => {
+router.post('/login', authLimiter, body(emailPasswordSchema), ah(async (req: Request, res: Response) => {
   const { email, password } = req.body as z.infer<typeof emailPasswordSchema>
   const normalEmail = email.toLowerCase()
 
@@ -74,7 +75,7 @@ router.post('/login', authLimiter, body(emailPasswordSchema), async (req: Reques
   audit(A.LOGIN_SUCCESS, { userId: String(c.id), req, metadata: { via: 'email-password' } })
 
   return res.json({ success: true, candidate: c, accessToken })
-})
+}))
 
 /* ── POST /save-profile ─────────────────────────────────────────────── */
 /* Saves the full application and moves it to PAYMENT_PENDING. No payment is
@@ -373,7 +374,7 @@ router.get('/admin/all', requireAuth('admin'), async (_req: Request, res: Respon
 })
 
 /* ── GET /:id ── (owner or admin) ───────────────────────────────────── */
-router.get('/:id', requireAuth('candidate', 'admin'), async (req: Request, res: Response) => {
+router.get('/:id', requireAuth('candidate', 'admin'), ah(async (req: Request, res: Response) => {
   const auth = req.auth!
   if (auth.role === 'candidate' && auth.id !== req.params.id)
     return res.status(403).json({ error: 'Access denied' })
@@ -381,6 +382,6 @@ router.get('/:id', requireAuth('candidate', 'admin'), async (req: Request, res: 
   const result = await pool.query('SELECT * FROM candidates WHERE id=$1', [req.params.id])
   if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' })
   return res.json(result.rows[0])
-})
+}))
 
 export default router
