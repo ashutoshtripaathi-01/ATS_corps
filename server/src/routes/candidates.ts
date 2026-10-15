@@ -6,6 +6,7 @@ import { pool } from '../db'
 import { signAccessToken, issueRefreshToken } from '../lib/tokens'
 import { requireAuth } from '../middleware/auth'
 import { ah } from '../lib/asyncRoute'
+import { verifyGoogleIdToken, GoogleAuthError } from '../lib/googleAuth'
 import { body } from '../lib/validate'
 import { audit, A } from '../lib/audit'
 import { logActivity, setApplicationStatus, E } from '../lib/activity'
@@ -75,6 +76,101 @@ router.post('/login', authLimiter, body(emailPasswordSchema), ah(async (req: Req
   audit(A.LOGIN_SUCCESS, { userId: String(c.id), req, metadata: { via: 'email-password' } })
 
   return res.json({ success: true, candidate: c, accessToken })
+}))
+
+/* ── POST /google ── sign in or sign up with a Google account ───────── */
+/*
+ * One endpoint serves both login and registration: whether this is a new
+ * applicant or a returning one is a fact about our database, not something
+ * the client should assert. The response tells the frontend which it was so
+ * it can route to the dashboard or into the registration form.
+ */
+router.post('/google', authLimiter, ah(async (req: Request, res: Response) => {
+  const { credential } = req.body as { credential?: string }
+
+  let identity
+  try {
+    identity = await verifyGoogleIdToken(credential ?? '')
+  } catch (e: any) {
+    if (e instanceof GoogleAuthError) {
+      audit(A.LOGIN_FAILED, { req, metadata: { via: 'google', reason: e.message } })
+      return res.status(401).json({ error: e.message })
+    }
+    throw e
+  }
+
+  // Match on Google's subject id first. An email address can be reassigned by
+  // a workspace admin, but sub is stable for the life of the account, so it is
+  // the stronger identifier.
+  let result = await pool.query('SELECT * FROM candidates WHERE google_sub = $1', [identity.sub])
+  let isNew = false
+
+  if (result.rows.length === 0) {
+    // No Google match — link to an existing password account with the same
+    // address. Safe only because Google asserted email_verified, which the
+    // verifier refuses to proceed without.
+    const byEmail = await pool.query('SELECT * FROM candidates WHERE email = $1', [identity.email])
+
+    if (byEmail.rows.length > 0) {
+      result = await pool.query(
+        `UPDATE candidates SET
+           google_sub       = $1,
+           avatar_url       = COALESCE($2, avatar_url),
+           full_name        = COALESCE(full_name, $3),
+           auth_provider    = CASE WHEN password_hash IS NULL THEN 'google' ELSE 'both' END,
+           last_activity_at = NOW(),
+           updated_at       = NOW()
+         WHERE id = $4
+         RETURNING *`,
+        [identity.sub, identity.picture ?? null, identity.name ?? null, byEmail.rows[0].id],
+      )
+      logActivity(result.rows[0].id, E.ACCOUNT_CREATED, {
+        description: 'Google account linked to existing registration',
+        actorType: 'candidate', actorId: String(result.rows[0].id),
+      })
+    } else {
+      isNew = true
+      result = await pool.query(
+        `INSERT INTO candidates
+           (email, google_sub, full_name, avatar_url, auth_provider,
+            application_status, last_activity_at)
+         VALUES ($1,$2,$3,$4,'google',$5,NOW())
+         RETURNING *`,
+        [identity.email, identity.sub, identity.name ?? null, identity.picture ?? null, S.REGISTERED],
+      )
+      audit(A.CANDIDATE_REGISTERED, {
+        userId: String(result.rows[0].id), req, metadata: { via: 'google' },
+      })
+      logActivity(result.rows[0].id, E.ACCOUNT_CREATED, {
+        description: 'Account created with Google',
+        actorType: 'candidate', actorId: String(result.rows[0].id),
+      })
+    }
+  } else {
+    // Returning Google user — refresh the profile picture, which rotates.
+    result = await pool.query(
+      `UPDATE candidates SET
+         avatar_url = COALESCE($1, avatar_url), last_activity_at = NOW()
+       WHERE id = $2 RETURNING *`,
+      [identity.picture ?? null, result.rows[0].id],
+    )
+  }
+
+  const c           = result.rows[0]
+  const accessToken = signAccessToken({ id: String(c.id), role: 'candidate' })
+  await issueRefreshToken(res, String(c.id), 'candidate')
+  audit(A.LOGIN_SUCCESS, { userId: String(c.id), req, metadata: { via: 'google' } })
+
+  // Never let a password hash leave the server, even though it is null here.
+  delete c.password_hash
+
+  return res.status(isNew ? 201 : 200).json({
+    success:     true,
+    isNew,
+    needsProfile: !c.mobile || !c.force || !c.loc1,
+    candidate:   c,
+    accessToken,
+  })
 }))
 
 /* ── POST /save-profile ─────────────────────────────────────────────── */

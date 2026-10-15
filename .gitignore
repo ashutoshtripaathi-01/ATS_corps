@@ -13,7 +13,9 @@ uploads/
 # ── Environment & secrets ─────────────────────────────────────────────────────
 .env
 .env.*
-!.env.example        # example files are safe to track
+# Example files carry no secrets and must stay tracked.
+!.env.example
+!**/.env.example
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
 logs/

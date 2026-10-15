@@ -309,6 +309,23 @@ export async function initDb() {
         FROM candidates WHERE police_verification_path IS NOT NULL
       ON CONFLICT (candidate_id, doc_type) DO NOTHING;
 
+      /* ═══════════════════════════════════════════════════════════════════
+         Phase 6 migration — Google sign-in
+         password_hash was already nullable, so an account created through
+         Google simply has no password. google_sub is Google's stable subject
+         id: it never changes for a user, whereas an email address can be
+         reassigned, so it is the field we match on first.
+         ═══════════════════════════════════════════════════════════════════ */
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS google_sub    VARCHAR(64);
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20);
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS avatar_url    TEXT;
+
+      UPDATE candidates SET auth_provider = 'password'
+        WHERE auth_provider IS NULL AND password_hash IS NOT NULL;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS candidates_google_sub_key
+        ON candidates(google_sub) WHERE google_sub IS NOT NULL;
+
       CREATE INDEX IF NOT EXISTS idx_cand_app_status   ON candidates(application_status);
       CREATE INDEX IF NOT EXISTS idx_cand_last_act     ON candidates(last_activity_at DESC);
       CREATE INDEX IF NOT EXISTS idx_cand_reg_ref      ON candidates(registration_ref);

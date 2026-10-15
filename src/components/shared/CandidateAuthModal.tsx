@@ -15,7 +15,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/store/useAppStore';
 import { toast } from '@/hooks/useToast';
-import { candidateLogin, candidateCreateAccount } from '@/lib/api';
+import { candidateLogin, candidateCreateAccount, candidateGoogleAuth } from '@/lib/api';
+import { GoogleSignInButton } from './GoogleSignInButton';
 import { setToken } from '@/lib/tokenStore';
 
 type Step = 'auth' | 'success';
@@ -116,6 +117,44 @@ export function CandidateAuthModal({
       navigate('/candidate/register', { state: { email: data.email } });
     } catch (err: any) {
       toast({ title: 'Registration failed', description: err.message || 'Please try again', variant: 'error' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /*
+   * One handler for both tabs: the server decides whether this Google account
+   * is new or returning, and whether the profile still needs filling in, so
+   * the button behaves correctly regardless of which tab the user is on.
+   */
+  const handleGoogle = async (credential: string) => {
+    setSubmitting(true);
+    try {
+      const result = await candidateGoogleAuth(credential);
+      if (result.accessToken) setToken(result.accessToken);
+      const c = result.candidate as any;
+      setUser({
+        id:        String(c.id),
+        name:      c.full_name || c.email.split('@')[0],
+        email:     c.email,
+        role:      'candidate',
+        avatar:    c.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.email}`,
+        createdAt: new Date(c.created_at),
+      });
+
+      if (result.needsProfile) {
+        onClose();
+        navigate('/candidate/register', { state: { email: c.email } });
+      } else {
+        setStep('success');
+        setTimeout(() => { onClose(); navigate('/candidate/dashboard'); }, 1400);
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Google sign-in failed',
+        description: err.message || 'Please try again, or use your email and password',
+        variant: 'error',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -387,6 +426,23 @@ export function CandidateAuthModal({
                         ? 'Sign in to access your candidate portal'
                         : 'Join Ex-Serviceman Jobs and start your journey'}
                     </p>
+
+                    {/* ── Google ── offered before the form, because it is
+                         the faster path and most people will prefer it ── */}
+                    <div className='mb-5'>
+                      <GoogleSignInButton
+                        onCredential={handleGoogle}
+                        disabled={submitting}
+                        text={mode === 'login' ? 'signin_with' : 'signup_with'}
+                      />
+                      <div className='flex items-center gap-3 mt-5'>
+                        <div className='flex-1 h-px bg-gray-200' />
+                        <span className='text-[11px] font-medium text-gray-400 uppercase tracking-wider'>
+                          or use email
+                        </span>
+                        <div className='flex-1 h-px bg-gray-200' />
+                      </div>
+                    </div>
 
                     {/* ── Login form ── */}
                     {mode === 'login' ? (

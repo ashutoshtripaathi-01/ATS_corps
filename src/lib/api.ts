@@ -310,6 +310,20 @@ export const candidateLogin = (email: string, password: string) =>
     false,
   )
 
+/** Sign in or sign up with Google. The server decides which it was. */
+export const candidateGoogleAuth = (credential: string) =>
+  req<{
+    success: boolean
+    isNew: boolean
+    needsProfile: boolean
+    candidate: ApplicantRecord & { avatar_url?: string | null }
+    accessToken: string
+  }>(
+    `${API_BASE}/candidates/google`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }) },
+    false,
+  )
+
 export const saveProfile = (data: Record<string, string | number>) =>
   req<{ success: boolean; candidateId: number; registrationRef: string | null }>(
     `${API_BASE}/candidates/save-profile`,

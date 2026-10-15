@@ -15,6 +15,10 @@ const schema = z
     ADMIN_EMAIL:          z.string().email('Must be a valid email').default('admin@atscorps.com'),
     ADMIN_PASSWORD:       z.string().min(8, 'Must be ≥8 chars').optional(),
     ADMIN_PASSWORD_HASH:  z.string().optional(),
+
+    // Public OAuth client id. Not a secret — the browser ships it too.
+    // Its only job here is to be the audience we verify Google tokens against.
+    GOOGLE_CLIENT_ID:     z.string().optional(),
     // Razorpay — required for live payments, optional when DEV_BYPASS=true
     RAZORPAY_KEY_ID:     z.string().optional(),
     RAZORPAY_KEY_SECRET: z.string().optional(),
