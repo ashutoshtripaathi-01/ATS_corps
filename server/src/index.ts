@@ -5,7 +5,7 @@ import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
 import dotenv from 'dotenv'
 import { validateEnv } from './lib/env'
-import { initDb } from './db'
+import { initDb, dbTarget } from './db'
 import { startTokenCleanupJob } from './jobs/tokenCleanup'
 import authRoutes from './routes/auth'
 import candidateRoutes from './routes/candidates'
@@ -132,14 +132,60 @@ app.use('/api/payments',     paymentRoutes)
 app.use('/api/documents',    documentRoutes)
 app.use('/api/admin',        adminRoutes)
 
+/* DB connectivity state, surfaced through /api/health */
+let dbReady = false
+let dbError: string | null = null
+
 app.get('/api/health', (_req, res) =>
-  res.json({ status: 'ok', service: 'Ex-Serviceman Jobs API', env: _env.NODE_ENV }),
+  res.status(dbReady ? 200 : 503).json({
+    status:  dbReady ? 'ok' : 'degraded',
+    service: 'Ex-Serviceman Jobs API',
+    env:     _env.NODE_ENV,
+    db:      dbReady ? 'connected' : 'unavailable',
+    dbTarget: dbTarget(),
+    dbError: dbReady ? undefined : dbError,
+  }),
 )
 
 /* ── Start ───────────────────────────────────────────────────────────── */
-async function start() {
-  await initDb()
-  startTokenCleanupJob()
-  app.listen(PORT, () => console.log(`✅ Ex-Serviceman Jobs API → http://localhost:${PORT}`))
+/*
+ * The HTTP listener opens BEFORE the database is touched.
+ *
+ * Previously initDb() ran first, so an unreachable database meant app.listen()
+ * was never reached: the process exited, Render restarted it, and the service
+ * sat in a crash loop answering nothing at all — no health endpoint, no error
+ * page, just hung connections. A database problem was indistinguishable from a
+ * dead host. Now the server always answers, and /api/health says exactly which
+ * host it failed to reach.
+ */
+async function connectDb(attempt = 1): Promise<void> {
+  try {
+    await initDb()
+    dbReady = true
+    dbError = null
+    console.log(`✅ Database connected → ${dbTarget()}`)
+  } catch (e: any) {
+    dbReady = false
+    dbError = e.message
+    console.error(`❌ Database unreachable (attempt ${attempt}) → ${dbTarget()}`)
+    console.error(`   ${e.code ?? ''} ${e.message}`)
+    if (e.code === 'ENOTFOUND') {
+      console.error('   That hostname does not resolve. Usual causes:')
+      console.error('   • the database is in a different region than this service')
+      console.error('   • the database is in a different Render workspace/environment')
+      console.error('   • the database is still provisioning')
+      console.error('   • an internal dpg-xxxx-a host was used from outside its region')
+      console.error('     (cross-region needs the EXTERNAL host + SSL)')
+    }
+    // Keep retrying with a cap, so the service recovers on its own once the
+    // database comes back instead of needing a manual redeploy.
+    const delay = Math.min(30_000, 2_000 * 2 ** (attempt - 1))
+    setTimeout(() => void connectDb(attempt + 1), delay)
+  }
 }
-start().catch(console.error)
+
+app.listen(PORT, () => {
+  console.log(`✅ Ex-Serviceman Jobs API listening on ${PORT}`)
+  void connectDb()
+  startTokenCleanupJob()
+})

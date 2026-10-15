@@ -7,13 +7,57 @@ dotenv.config()
 // timezone ahead of UTC — that silently shifted follow-up and retirement dates.
 types.setTypeParser(types.builtins.DATE, (v: string) => v)
 
-export const pool = new Pool({
-  host:     process.env.DB_HOST     || 'localhost',
-  port:     Number(process.env.DB_PORT) || 5432,
-  database: process.env.DB_NAME     || 'atscorps',
-  user:     process.env.DB_USER     || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-})
+/**
+ * Connection config.
+ *
+ * DATABASE_URL wins when present — it is what Render hands you, and wiring it
+ * through a Blueprint means the host can never drift out of sync with the
+ * database the way five hand-copied DB_* vars can. The individual vars stay
+ * as a fallback for local development.
+ *
+ * SSL is required on Render's EXTERNAL hostname and refused on the internal
+ * dpg-xxxx-a form, so it follows the host instead of being hardcoded.
+ */
+const connectionString = process.env.DATABASE_URL
+
+function targetHost(): string {
+  if (!connectionString) return process.env.DB_HOST || 'localhost'
+  try { return new URL(connectionString).hostname } catch { return 'unparseable' }
+}
+
+const needsSsl = /.render.com$/.test(targetHost())
+
+export const pool = new Pool(
+  connectionString
+    ? {
+        connectionString,
+        ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
+        connectionTimeoutMillis: 10_000,
+      }
+    : {
+        host:     process.env.DB_HOST     || 'localhost',
+        port:     Number(process.env.DB_PORT) || 5432,
+        database: process.env.DB_NAME     || 'atscorps',
+        user:     process.env.DB_USER     || 'postgres',
+        password: process.env.DB_PASSWORD || 'postgres',
+        ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
+        connectionTimeoutMillis: 10_000,
+      },
+)
+
+/** Where we are trying to connect, with no credentials — safe to log. */
+export function dbTarget(): string {
+  let port = process.env.DB_PORT || '5432'
+  let name = process.env.DB_NAME || 'atscorps'
+  if (connectionString) {
+    try {
+      const u = new URL(connectionString)
+      port = u.port || '5432'
+      name = u.pathname.slice(1)
+    } catch { port = '?'; name = '?' }
+  }
+  return targetHost() + ':' + port + '/' + name + (needsSsl ? ' (ssl)' : '')
+}
 
 export async function initDb() {
   const client = await pool.connect()
