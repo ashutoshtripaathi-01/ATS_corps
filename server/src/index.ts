@@ -3,7 +3,6 @@ import cors from 'cors'
 import helmet from 'helmet'
 import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
-import path from 'path'
 import dotenv from 'dotenv'
 import { validateEnv } from './lib/env'
 import { initDb } from './db'
@@ -14,6 +13,8 @@ import employerRoutes from './routes/employers'
 import jobRoutes from './routes/jobs'
 import applicationRoutes from './routes/applications'
 import paymentRoutes from './routes/payments'
+import documentRoutes from './routes/documents'
+import adminRoutes from './routes/admin'
 
 // Load .env first, then validate — exits with a clear message if anything is wrong
 dotenv.config()
@@ -115,8 +116,11 @@ app.use(
   }),
 )
 
-/* ── Static file serving ─────────────────────────────────────────────── */
-app.use('/uploads', express.static(path.join(__dirname, '../../uploads')))
+/* ── Uploaded documents are NOT served statically ────────────────────
+   Candidate documents (Aadhaar, PAN, service records) are private. They are
+   streamed only through GET /api/documents/:id/file, which checks that the
+   caller owns the document or is an admin. Serving /uploads with
+   express.static would hand every file to anyone who guessed a filename.   */
 
 /* ── API routes ──────────────────────────────────────────────────────── */
 app.use('/api/auth',         authRoutes)
@@ -125,6 +129,8 @@ app.use('/api/employers',    employerRoutes)
 app.use('/api/jobs',         jobRoutes)
 app.use('/api/applications', applicationRoutes)
 app.use('/api/payments',     paymentRoutes)
+app.use('/api/documents',    documentRoutes)
+app.use('/api/admin',        adminRoutes)
 
 app.get('/api/health', (_req, res) =>
   res.json({ status: 'ok', service: 'Ex-Serviceman Jobs API', env: _env.NODE_ENV }),

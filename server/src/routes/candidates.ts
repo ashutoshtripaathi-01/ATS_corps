@@ -1,72 +1,16 @@
 import { Router, Request, Response } from 'express'
-import multer from 'multer'
-import path from 'path'
-import fs from 'fs'
-import crypto from 'crypto'
 import bcrypt from 'bcryptjs'
 import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
 import { pool } from '../db'
 import { signAccessToken, issueRefreshToken } from '../lib/tokens'
 import { requireAuth } from '../middleware/auth'
-import { body, mobile as mobileSchema } from '../lib/validate'
+import { body } from '../lib/validate'
 import { audit, A } from '../lib/audit'
-import { verifySignature } from '../lib/razorpay'
-import { env } from '../lib/env'
+import { logActivity, setApplicationStatus, E } from '../lib/activity'
+import { S, PAID_STATUSES, REQUIRED_DOCS, DOC_STATUS } from '../lib/applicationStatus'
 
 const router = Router()
-
-/* ── Allowed file types ─────────────────────────────────────────────── */
-const ALLOWED_MIME = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/jpg',
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-])
-
-const ALLOWED_EXT = new Set(['.jpg', '.jpeg', '.png', '.pdf', '.doc', '.docx'])
-
-// Reject any upload with these extensions regardless of MIME type
-const BLOCKED_EXT = new Set([
-  '.exe', '.bat', '.sh', '.cmd', '.com', '.msi', '.dll',
-  '.js', '.ts', '.php', '.py', '.rb', '.pl', '.ps1', '.vbs',
-  '.wsf', '.jar', '.class', '.scr', '.pif', '.htaccess',
-])
-
-/* ── Multer storage ─────────────────────────────────────────────────── */
-const uploadDir = path.join(__dirname, '../../../uploads/candidates')
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
-    // Use only the extension from the original name — never the name itself
-    const rawExt = path.extname(file.originalname).toLowerCase()
-    const safeExt = ALLOWED_EXT.has(rawExt) ? rawExt : '.bin'
-    cb(null, `${crypto.randomUUID()}${safeExt}`)
-  },
-})
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
-  fileFilter: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase()
-
-    if (BLOCKED_EXT.has(ext)) {
-      return cb(new Error(`File type "${ext}" is not permitted`))
-    }
-    if (!ALLOWED_MIME.has(file.mimetype)) {
-      return cb(new Error(`MIME type "${file.mimetype}" is not permitted`))
-    }
-    if (!ALLOWED_EXT.has(ext)) {
-      return cb(new Error(`File extension "${ext}" is not permitted`))
-    }
-    cb(null, true)
-  },
-})
 
 /* ── Auth rate limiter: 10 per 15 min per IP ────────────────────────── */
 const authLimiter = rateLimit({
@@ -92,15 +36,21 @@ router.post('/create-account', authLimiter, body(emailPasswordSchema), async (re
     return res.status(409).json({ error: 'An account with this email already exists' })
 
   const passwordHash = await bcrypt.hash(password, 12)
+  // The application record is created together with the account — an applicant
+  // exists in the system from this moment on, whether or not they ever pay.
   const result = await pool.query(
-    'INSERT INTO candidates (email, password_hash) VALUES ($1,$2) RETURNING *',
-    [normalEmail, passwordHash],
+    `INSERT INTO candidates (email, password_hash, application_status, last_activity_at)
+     VALUES ($1,$2,$3,NOW()) RETURNING *`,
+    [normalEmail, passwordHash, S.REGISTERED],
   )
 
   const c           = result.rows[0]
   const accessToken = signAccessToken({ id: String(c.id), role: 'candidate' })
   await issueRefreshToken(res, String(c.id), 'candidate')
   audit(A.CANDIDATE_REGISTERED, { userId: String(c.id), req, metadata: { email: normalEmail } })
+  logActivity(c.id, E.ACCOUNT_CREATED, {
+    description: 'Account created', actorType: 'candidate', actorId: String(c.id),
+  })
 
   return res.status(201).json({ success: true, candidate: c, accessToken })
 })
@@ -127,85 +77,89 @@ router.post('/login', authLimiter, body(emailPasswordSchema), async (req: Reques
 })
 
 /* ── POST /save-profile ─────────────────────────────────────────────── */
-const uploadFields = upload.fields([
-  { name: 'idCard',             maxCount: 1 },
-  { name: 'dischargeBook',      maxCount: 1 },
-  { name: 'policeVerification', maxCount: 1 },
-])
+/* Saves the full application and moves it to PAYMENT_PENDING. No payment is
+   required to reach this point — the applicant is now durably in the system
+   and visible to admins whether or not they go on to pay.                  */
+router.post('/save-profile', requireAuth('candidate'), async (req: Request, res: Response) => {
+  try {
+    const candidateId = Number(req.auth!.id)
+    const {
+      mobile, force, rank, fullName, unit, retirementDate,
+      post, otherPost, gunLicense, loc1, loc2, loc3, applicationFee,
+    } = req.body as Record<string, string>
 
-router.post('/save-profile', requireAuth('candidate'), (req: Request, res: Response) => {
-  uploadFields(req, res, async (err) => {
-    if (err instanceof multer.MulterError) {
-      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File too large — maximum 10 MB' : err.message
-      return res.status(400).json({ error: msg })
+    if (!mobile || !force || !rank || !fullName || !unit || !retirementDate || !post || !loc1)
+      return res.status(400).json({ error: 'Required fields missing' })
+    if (!/^[6-9]\d{9}$/.test(mobile))
+      return res.status(400).json({ error: 'Invalid mobile number' })
+
+    // Check for mobile conflict with another candidate
+    const conflict = await pool.query(
+      'SELECT id FROM candidates WHERE mobile=$1 AND id!=$2',
+      [mobile, candidateId],
+    )
+    if (conflict.rows.length > 0)
+      return res.status(409).json({ error: 'This mobile number is already registered with another account' })
+
+    const result = await pool.query(
+      `UPDATE candidates SET
+         full_name        = $1,
+         mobile           = $2,
+         force            = $3,
+         rank             = $4,
+         unit             = $5,
+         retirement_date  = $6,
+         post             = $7,
+         other_post       = $8,
+         gun_license      = $9,
+         loc1             = $10,
+         loc2             = $11,
+         loc3             = $12,
+         application_fee  = $13,
+         registration_ref = COALESCE(registration_ref,
+                              'ATS-' || to_char(NOW(),'YYYY') || '-' || LPAD(id::text,5,'0')),
+         last_activity_at = NOW(),
+         updated_at       = NOW()
+       WHERE id = $14
+       RETURNING registration_ref, application_status`,
+      [
+        fullName, mobile, force, rank, unit, retirementDate,
+        post, otherPost || null, gunLicense || null,
+        loc1, loc2 || null, loc3 || null,
+        applicationFee ? Number(applicationFee) : 0,
+        candidateId,
+      ],
+    )
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: 'Application not found' })
+
+    const current = result.rows[0].application_status as string | null
+
+    // Only advance while the application is still pre-payment — re-saving
+    // after payment must never knock it back to PAYMENT_PENDING.
+    if (!current || current === S.REGISTERED || current === S.APPLICATION_STARTED) {
+      await setApplicationStatus(candidateId, S.PAYMENT_PENDING, {
+        actorType: 'candidate', actorId: String(candidateId),
+        description: 'Application details submitted — awaiting payment', force: true,
+      })
     }
-    if (err) return res.status(400).json({ error: (err as Error).message })
 
-    try {
-      const candidateId = req.auth!.id
-      const {
-        mobile, force, rank, fullName, unit, retirementDate,
-        post, otherPost, gunLicense, loc1, loc2, loc3, applicationFee,
-      } = req.body as Record<string, string>
+    logActivity(candidateId, E.APPLICATION_SUBMITTED, {
+      description: 'Application details saved',
+      actorType: 'candidate', actorId: String(candidateId),
+    })
 
-      if (!mobile || !force || !rank || !fullName || !unit || !retirementDate || !post || !loc1)
-        return res.status(400).json({ error: 'Required fields missing' })
-      if (!/^[6-9]\d{9}$/.test(mobile))
-        return res.status(400).json({ error: 'Invalid mobile number' })
-
-      // Check for mobile conflict with another candidate
-      const conflict = await pool.query(
-        'SELECT id FROM candidates WHERE mobile=$1 AND id!=$2',
-        [mobile, candidateId],
-      )
-      if (conflict.rows.length > 0)
-        return res.status(409).json({ error: 'This mobile number is already registered with another account' })
-
-      const files             = req.files as Record<string, Express.Multer.File[]>
-      const idCardPath        = files?.idCard?.[0]?.filename             ?? null
-      const dischargeBookPath = files?.dischargeBook?.[0]?.filename      ?? null
-      const policeVerifPath   = files?.policeVerification?.[0]?.filename ?? null
-
-      await pool.query(
-        `UPDATE candidates SET
-           full_name                = $1,
-           mobile                   = $2,
-           force                    = $3,
-           rank                     = $4,
-           unit                     = $5,
-           retirement_date          = $6,
-           post                     = $7,
-           other_post               = $8,
-           gun_license              = $9,
-           loc1                     = $10,
-           loc2                     = $11,
-           loc3                     = $12,
-           application_fee          = $13,
-           id_card_path             = COALESCE($14, id_card_path),
-           discharge_book_path      = COALESCE($15, discharge_book_path),
-           police_verification_path = COALESCE($16, police_verification_path),
-           registration_ref         = COALESCE(registration_ref,
-                                        'ATS-' || to_char(NOW(),'YYYY') || '-' || LPAD(id::text,5,'0')),
-           updated_at               = NOW()
-         WHERE id = $17`,
-        [
-          fullName, mobile, force, rank, unit, retirementDate,
-          post, otherPost || null, gunLicense || null,
-          loc1, loc2 || null, loc3 || null,
-          applicationFee ? Number(applicationFee) : 0,
-          idCardPath, dischargeBookPath, policeVerifPath,
-          candidateId,
-        ],
-      )
-
-      return res.json({ success: true, candidateId: Number(candidateId) })
-    } catch (e: any) {
-      if (e.code === '23505')
-        return res.status(409).json({ error: 'Mobile number already registered' })
-      console.error('[save-profile]', e)
-      return res.status(500).json({ error: 'Failed to save profile', detail: e.message })
-    }
-  })
+    return res.json({
+      success:         true,
+      candidateId,
+      registrationRef: result.rows[0].registration_ref,
+    })
+  } catch (e: any) {
+    if (e.code === '23505')
+      return res.status(409).json({ error: 'Mobile number already registered' })
+    console.error('[save-profile]', e)
+    return res.status(500).json({ error: 'Failed to save profile', detail: e.message })
+  }
 })
 
 /* ── PATCH /update-draft ── text-only autosave (no files) ──────────── */
@@ -232,6 +186,7 @@ router.patch('/update-draft', requireAuth('candidate'), async (req: Request, res
          loc1            = CASE WHEN length(COALESCE($10,'')) > 0 THEN $10 ELSE loc1            END,
          loc2            = NULLIF($11,''),
          loc3            = NULLIF($12,''),
+         last_activity_at = NOW(),
          updated_at      = NOW()
        WHERE id = $13`,
       [
@@ -242,6 +197,24 @@ router.patch('/update-draft', requireAuth('candidate'), async (req: Request, res
         candidateId,
       ],
     )
+
+    // First meaningful keystroke moves a bare account into an in-progress
+    // application, so a half-filled form is already visible to admins. Only
+    // REGISTERED advances here — autosaving later must never drag a paid
+    // application backwards.
+    const cur = await pool.query(
+      'SELECT application_status FROM candidates WHERE id = $1',
+      [candidateId],
+    )
+    const status = cur.rows[0]?.application_status as string | null
+    if (!status || status === S.REGISTERED) {
+      // A failed transition must not break autosave, but it must be visible.
+      await setApplicationStatus(candidateId, S.APPLICATION_STARTED, {
+        actorType: 'candidate', actorId: String(candidateId),
+        description: 'Application started',
+      }).catch((e: Error) => console.error('[update-draft] status transition failed:', e.message))
+    }
+
     return res.json({ success: true })
   } catch (e: any) {
     // Autosave errors should not crash the UI — return a structured error
@@ -250,106 +223,62 @@ router.patch('/update-draft', requireAuth('candidate'), async (req: Request, res
   }
 })
 
-/* ── POST /register ─────────────────────────────────────────────────── */
-const uploadFieldsLegacy = upload.fields([
-  { name: 'idCard',             maxCount: 1 },
-  { name: 'dischargeBook',      maxCount: 1 },
-  { name: 'policeVerification', maxCount: 1 },
-])
+/* ── GET /me ── the signed-in applicant's full application state ────── */
+/* Single source of truth for the candidate dashboard: profile, lifecycle
+   status, payment, documents and where to resume.                        */
+router.get('/me', requireAuth('candidate'), async (req: Request, res: Response) => {
+  try {
+    const candidateId = Number(req.auth!.id)
 
-router.post('/register', requireAuth('candidate'), (req: Request, res: Response) => {
-  uploadFieldsLegacy(req, res, async (err) => {
-    if (err instanceof multer.MulterError) {
-      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File too large — maximum 10 MB' : err.message
-      return res.status(400).json({ error: msg })
-    }
-    if (err) return res.status(400).json({ error: (err as Error).message })
+    const [candRes, docsRes, payRes] = await Promise.all([
+      pool.query(
+        `SELECT id, email, full_name, mobile, force, rank, unit, retirement_date,
+                post, other_post, gun_license, loc1, loc2, loc3,
+                application_fee, payment_status, registration_status,
+                application_status, registration_ref, created_at, updated_at
+           FROM candidates WHERE id = $1`,
+        [candidateId],
+      ),
+      pool.query(
+        `SELECT id, doc_type, original_name, status, rejection_reason, uploaded_at
+           FROM candidate_documents WHERE candidate_id = $1`,
+        [candidateId],
+      ),
+      pool.query(
+        `SELECT razorpay_order_id, razorpay_payment_id, amount, currency, status, paid_at
+           FROM payment_attempts WHERE candidate_id = $1
+          ORDER BY created_at DESC LIMIT 1`,
+        [candidateId],
+      ),
+    ])
 
-    try {
-      const candidateId = req.auth!.id
+    if (candRes.rows.length === 0) return res.status(404).json({ error: 'Not found' })
 
-      const {
-        mobile, force, rank, fullName, unit, retirementDate,
-        post, otherPost, gunLicense, loc1, loc2, loc3, applicationFee,
-        razorpay_order_id, razorpay_payment_id, razorpay_signature,
-        devBypass,
-      } = req.body as Record<string, string>
+    const c      = candRes.rows[0]
+    const status = c.application_status as string | null
+    const paid   = !!status && PAID_STATUSES.includes(status as any)
 
-      if (!mobile || !force || !rank || !fullName || !unit || !retirementDate || !post || !loc1)
-        return res.status(400).json({ error: 'Required fields missing' })
+    const byType     = new Map(docsRes.rows.map((d) => [d.doc_type, d]))
+    const docsDone   = REQUIRED_DOCS.filter((t) => byType.has(t)).length
+    const docsOk     = REQUIRED_DOCS.filter((t) => byType.get(t)?.status === DOC_STATUS.APPROVED).length
+    const profileDone = !!(c.full_name && c.mobile && c.force && c.rank && c.loc1)
 
-      // Mobile format validation
-      if (!/^[6-9]\d{9}$/.test(mobile))
-        return res.status(400).json({ error: 'Invalid mobile number' })
-
-      // ── Payment verification ─────────────────────────────────────────
-      const { DEV_BYPASS, NODE_ENV, RAZORPAY_KEY_SECRET } = env()
-      let paymentStatus: string
-
-      if (razorpay_order_id && razorpay_payment_id && razorpay_signature) {
-        // Real Razorpay payment — verify HMAC signature
-        if (!RAZORPAY_KEY_SECRET) {
-          return res.status(503).json({ error: 'Payment service not configured on server' })
-        }
-        if (!verifySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature)) {
-          return res.status(400).json({ error: 'Payment verification failed — invalid signature' })
-        }
-        paymentStatus = 'paid'
-      } else if (devBypass === 'true' && DEV_BYPASS === 'true' && NODE_ENV !== 'production') {
-        paymentStatus = 'dev_bypass'
-      } else {
-        return res.status(402).json({ error: 'Payment required' })
-      }
-
-      const files             = req.files as Record<string, Express.Multer.File[]>
-      const idCardPath        = files?.idCard?.[0]?.filename             ?? null
-      const dischargeBookPath = files?.dischargeBook?.[0]?.filename      ?? null
-      const policeVerifPath   = files?.policeVerification?.[0]?.filename ?? null
-
-      const result = await pool.query(
-        `UPDATE candidates SET
-           full_name                = $1,
-           mobile                   = $2,
-           force                    = $3,
-           rank                     = $4,
-           unit                     = $5,
-           retirement_date          = $6,
-           post                     = $7,
-           other_post               = $8,
-           gun_license              = $9,
-           loc1                     = $10,
-           loc2                     = $11,
-           loc3                     = $12,
-           application_fee          = $13,
-           payment_status           = $14,
-           registration_status      = CASE WHEN $14 = 'paid' THEN 'active' ELSE registration_status END,
-           id_card_path             = COALESCE($15, id_card_path),
-           discharge_book_path      = COALESCE($16, discharge_book_path),
-           police_verification_path = COALESCE($17, police_verification_path),
-           updated_at               = NOW()
-         WHERE id = $18
-         RETURNING *`,
-        [
-          fullName, mobile, force, rank, unit, retirementDate,
-          post, otherPost || null, gunLicense || null,
-          loc1, loc2 || null, loc3 || null,
-          applicationFee ? Number(applicationFee) : 0, paymentStatus,
-          idCardPath, dischargeBookPath, policeVerifPath,
-          candidateId,
-        ],
-      )
-
-      const c           = result.rows[0]
-      const accessToken = signAccessToken({ id: String(c.id), role: 'candidate' })
-      await issueRefreshToken(res, String(c.id), 'candidate')
-      audit(A.CANDIDATE_REGISTERED, { userId: String(c.id), req, metadata: { mobile } })
-
-      return res.status(201).json({ success: true, candidate: c, accessToken })
-    } catch (e: any) {
-      console.error('[Register]', e)
-      return res.status(500).json({ error: 'Registration failed', detail: e.message })
-    }
-  })
+    return res.json({
+      application: c,
+      paid,
+      progress: {
+        profileComplete:   profileDone,
+        documentsRequired: REQUIRED_DOCS.length,
+        documentsUploaded: docsDone,
+        documentsApproved: docsOk,
+      },
+      documents:   docsRes.rows,
+      lastPayment: payRes.rows[0] ?? null,
+    })
+  } catch (e: any) {
+    console.error('[candidates/me]', e)
+    return res.status(500).json({ error: 'Failed to load application' })
+  }
 })
 
 /* ── GET /admin/stats ── (admin only) ───────────────────────────────── */

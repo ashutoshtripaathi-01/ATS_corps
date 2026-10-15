@@ -18,9 +18,19 @@ export function getRazorpay(): Razorpay {
 export function verifySignature(orderId: string, paymentId: string, signature: string): boolean {
   const { RAZORPAY_KEY_SECRET } = env()
   if (!RAZORPAY_KEY_SECRET) return false
+
   const expected = crypto
     .createHmac('sha256', RAZORPAY_KEY_SECRET)
     .update(`${orderId}|${paymentId}`)
     .digest('hex')
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
+
+  const a = Buffer.from(expected, 'utf8')
+  const b = Buffer.from(signature ?? '', 'utf8')
+
+  // timingSafeEqual throws RangeError on a length mismatch, which would take
+  // the whole process down on a malformed signature. Compare lengths first —
+  // the length of an HMAC digest is not a secret, so this leaks nothing.
+  if (a.length !== b.length) return false
+
+  return crypto.timingSafeEqual(a, b)
 }

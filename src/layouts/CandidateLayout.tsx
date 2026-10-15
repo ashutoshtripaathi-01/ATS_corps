@@ -20,6 +20,7 @@ import {
   Briefcase,
   Calendar,
   MessageSquare,
+  FileCheck,
 } from 'lucide-react';
 import companyLogo from '@/assets/company logo.png';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ import type { Notification } from '@/types';
 
 const navItems = [
   { label: 'Home', icon: LayoutDashboard, href: '/candidate/dashboard' },
+  { label: 'My Documents', icon: FileCheck, href: '/candidate/documents' },
   { label: 'Jobs', icon: Briefcase, href: '/candidate/jobs' },
   { label: 'Applications', icon: FileText, href: '/candidate/applications' },
   { label: 'Saved Jobs', icon: Bookmark, href: '/candidate/saved' },

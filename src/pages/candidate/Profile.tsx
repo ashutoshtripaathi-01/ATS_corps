@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { User, Phone, Shield, Briefcase, MapPin, CalendarDays, FileText, CheckCircle, Clock, AlertCircle, Award } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
-import { getCandidateProfile, FILES_BASE } from '@/lib/api';
+import { getCandidateProfile, getMyDocuments, type DocumentSlot } from '@/lib/api';
+import { DOC_META, DOC_STATUS_CHIP } from '@/constants/applicationStatus';
+import { SecureDocLink } from '@/components/shared/SecureDocLink';
 
 interface Candidate {
   id: number; full_name: string; mobile: string; force: string; rank: string;
@@ -29,11 +31,14 @@ function formatDate(iso: string) {
 export default function CandidateProfile() {
   const { user } = useAppStore();
   const [profile, setProfile] = useState<Candidate | null>(null);
+  const [docs,    setDocs]    = useState<DocumentSlot[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user?.id || user.id === 'skip-test') { setLoading(false); return; }
     getCandidateProfile(user.id).then(setProfile).catch(console.error).finally(() => setLoading(false));
+    // Documents live in their own table now and are fetched separately.
+    getMyDocuments().then((r) => setDocs(r.documents)).catch(() => setDocs([]));
   }, [user?.id]);
 
   if (loading) {
@@ -64,11 +69,8 @@ export default function CandidateProfile() {
 
   const verifyBadge = STATUS_BADGE[profile.verification_status] ?? STATUS_BADGE.pending;
   const VerifyIcon  = verifyBadge.icon;
-  const docItems    = [
-    { label: 'ID Card',             path: profile.id_card_path },
-    { label: 'Discharge Book',      path: profile.discharge_book_path },
-    { label: 'Police Verification', path: profile.police_verification_path },
-  ];
+  // Only show slots that carry a real upload; everything else is noise here.
+  const docItems = docs.filter((d) => d.required || d.status !== 'PENDING');
   const initials = profile.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
   return (
@@ -138,26 +140,35 @@ export default function CandidateProfile() {
                 <p className="text-sm font-bold text-gray-900 dark:text-[#F0EFEA]">Submitted Documents</p>
               </div>
               <div className="p-4 space-y-2.5">
-                {docItems.map(({ label, path }) => (
-                  <div key={label} className={`flex items-center justify-between gap-3 rounded-xl p-3 ${path ? 'bg-green-50 dark:bg-green-900/15' : 'bg-gray-50 dark:bg-white/4'}`}>
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${path ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-200 dark:bg-white/10'}`}>
-                        {path ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <AlertCircle className="w-3.5 h-3.5 text-gray-400" />}
+                {docItems.length === 0 && (
+                  <p className="text-xs text-gray-400 text-center py-3">
+                    Documents unlock after your registration payment.
+                  </p>
+                )}
+                {docItems.map((d) => {
+                  const uploaded = d.status !== 'PENDING';
+                  const label    = DOC_META[d.docType]?.label ?? d.docType;
+                  return (
+                    <div key={d.docType} className={`flex items-center justify-between gap-3 rounded-xl p-3 ${uploaded ? 'bg-green-50 dark:bg-green-900/15' : 'bg-gray-50 dark:bg-white/4'}`}>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${uploaded ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-200 dark:bg-white/10'}`}>
+                          {uploaded ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <AlertCircle className="w-3.5 h-3.5 text-gray-400" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">{label}</p>
+                          {uploaded && (
+                            <span className={`inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${DOC_STATUS_CHIP[d.status]}`}>
+                              {d.status.replace(/_/g, ' ')}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</p>
+                      {d.id
+                        ? <SecureDocLink docId={d.id} />
+                        : <span className="text-[10px] text-gray-400 shrink-0">Not uploaded</span>}
                     </div>
-                    {path ? (
-                      <a href={`${FILES_BASE.replace('/candidates', '')}/${path.replace(/^.*uploads\//, '')}`}
-                        target="_blank" rel="noopener noreferrer"
-                        className="text-xs font-semibold text-[#F7A607] hover:underline"
-                      >
-                        View
-                      </a>
-                    ) : (
-                      <span className="text-[10px] text-gray-400">Not uploaded</span>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </motion.div>
           </div>

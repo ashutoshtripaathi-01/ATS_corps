@@ -13,6 +13,7 @@ import Applications from '@/pages/candidate/Applications'
 import CandidateRegister from '@/pages/candidate/Register'
 import CandidatePayment from '@/pages/candidate/Payment'
 import CandidateProfile from '@/pages/candidate/Profile'
+import CandidateDocuments from '@/pages/candidate/Documents'
 import SavedJobs from '@/pages/candidate/SavedJobs'
 import CandidateInterviews from '@/pages/candidate/Interviews'
 import BrowseCompanies from '@/pages/candidate/BrowseCompanies'
@@ -71,6 +72,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/candidate/dashboard" replace /> },
       { path: 'dashboard',     element: <CandidateDashboard /> },
+      { path: 'documents',     element: <CandidateDocuments /> },
       { path: 'jobs',          element: <CandidateJobs /> },
       { path: 'jobs/:id',      element: <JobDetail /> },
       { path: 'applications',  element: <Applications /> },

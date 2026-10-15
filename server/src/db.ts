@@ -1,6 +1,11 @@
-import { Pool } from 'pg'
+import { Pool, types } from 'pg'
 import dotenv from 'dotenv'
 dotenv.config()
+
+// Return DATE columns as plain 'YYYY-MM-DD' strings. By default pg builds a
+// Date at local midnight, which serialises to the previous day in JSON for any
+// timezone ahead of UTC — that silently shifted follow-up and retirement dates.
+types.setTypeParser(types.builtins.DATE, (v: string) => v)
 
 export const pool = new Pool({
   host:     process.env.DB_HOST     || 'localhost',
@@ -158,6 +163,118 @@ export async function initDb() {
 
       -- Phase 4 migration: stable registration reference number
       ALTER TABLE candidates ADD COLUMN IF NOT EXISTS registration_ref VARCHAR(30);
+
+      /* ═══════════════════════════════════════════════════════════════════
+         Phase 5 migration — application lifecycle workflow
+         The candidates row IS the registration application (1:1 with the
+         user account). The tables below hang off candidate_id and carry the
+         post-payment workflow: documents, calls, notes, timeline, visits.
+         ═══════════════════════════════════════════════════════════════════ */
+
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS application_status VARCHAR(40);
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS assigned_admin     VARCHAR(120);
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS last_activity_at   TIMESTAMPTZ;
+
+      -- Backfill lifecycle status from the existing payment/profile columns so
+      -- no pre-existing registration is stranded without a status.
+      UPDATE candidates SET application_status =
+        CASE
+          WHEN payment_status IN ('paid','dev_bypass')
+               AND (id_card_path IS NOT NULL OR discharge_book_path IS NOT NULL)
+                                                    THEN 'DOCUMENTS_SUBMITTED'
+          WHEN payment_status IN ('paid','dev_bypass') THEN 'DOCUMENTS_PENDING'
+          WHEN full_name IS NOT NULL AND loc1 IS NOT NULL THEN 'PAYMENT_PENDING'
+          WHEN full_name IS NOT NULL OR force IS NOT NULL THEN 'APPLICATION_STARTED'
+          ELSE 'REGISTERED'
+        END
+      WHERE application_status IS NULL;
+
+      UPDATE candidates SET last_activity_at = COALESCE(updated_at, created_at)
+        WHERE last_activity_at IS NULL;
+
+      CREATE TABLE IF NOT EXISTS candidate_documents (
+        id               SERIAL PRIMARY KEY,
+        candidate_id     INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+        doc_type         VARCHAR(40)  NOT NULL,
+        file_path        TEXT         NOT NULL,
+        original_name    VARCHAR(255),
+        status           VARCHAR(20)  NOT NULL DEFAULT 'UPLOADED',
+        rejection_reason TEXT,
+        reviewed_by      VARCHAR(120),
+        reviewed_at      TIMESTAMPTZ,
+        uploaded_at      TIMESTAMPTZ  DEFAULT NOW(),
+        UNIQUE (candidate_id, doc_type)
+      );
+
+      CREATE TABLE IF NOT EXISTS call_logs (
+        id                 SERIAL PRIMARY KEY,
+        candidate_id       INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+        call_status        VARCHAR(30) NOT NULL,
+        notes              TEXT,
+        next_followup_date DATE,
+        admin_id           VARCHAR(120),
+        created_at         TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS admin_notes (
+        id           SERIAL PRIMARY KEY,
+        candidate_id INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+        note         TEXT NOT NULL,
+        admin_id     VARCHAR(120),
+        created_at   TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS activity_events (
+        id           SERIAL PRIMARY KEY,
+        candidate_id INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+        event_type   VARCHAR(60) NOT NULL,
+        description  TEXT,
+        actor_type   VARCHAR(20) DEFAULT 'system',
+        actor_id     VARCHAR(120),
+        metadata     TEXT,
+        created_at   TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS office_visits (
+        id                           SERIAL PRIMARY KEY,
+        candidate_id                 INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+        visit_date                   DATE,
+        visit_time                   VARCHAR(20),
+        assigned_staff               VARCHAR(120),
+        status                       VARCHAR(20) DEFAULT 'SCHEDULED',
+        physical_verification_status VARCHAR(20),
+        notes                        TEXT,
+        created_at                   TIMESTAMPTZ DEFAULT NOW(),
+        updated_at                   TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      -- Carry the three legacy document columns into candidate_documents so
+      -- historical uploads remain visible under the new document workflow.
+      INSERT INTO candidate_documents (candidate_id, doc_type, file_path, status)
+      SELECT id, 'service_certificate', id_card_path, 'UPLOADED'
+        FROM candidates WHERE id_card_path IS NOT NULL
+      ON CONFLICT (candidate_id, doc_type) DO NOTHING;
+
+      INSERT INTO candidate_documents (candidate_id, doc_type, file_path, status)
+      SELECT id, 'discharge_book', discharge_book_path, 'UPLOADED'
+        FROM candidates WHERE discharge_book_path IS NOT NULL
+      ON CONFLICT (candidate_id, doc_type) DO NOTHING;
+
+      INSERT INTO candidate_documents (candidate_id, doc_type, file_path, status)
+      SELECT id, 'police_verification', police_verification_path, 'UPLOADED'
+        FROM candidates WHERE police_verification_path IS NOT NULL
+      ON CONFLICT (candidate_id, doc_type) DO NOTHING;
+
+      CREATE INDEX IF NOT EXISTS idx_cand_app_status   ON candidates(application_status);
+      CREATE INDEX IF NOT EXISTS idx_cand_last_act     ON candidates(last_activity_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_cand_reg_ref      ON candidates(registration_ref);
+      CREATE INDEX IF NOT EXISTS idx_docs_candidate    ON candidate_documents(candidate_id);
+      CREATE INDEX IF NOT EXISTS idx_docs_status       ON candidate_documents(status);
+      CREATE INDEX IF NOT EXISTS idx_calls_candidate   ON call_logs(candidate_id);
+      CREATE INDEX IF NOT EXISTS idx_calls_followup    ON call_logs(next_followup_date);
+      CREATE INDEX IF NOT EXISTS idx_notes_candidate   ON admin_notes(candidate_id);
+      CREATE INDEX IF NOT EXISTS idx_events_candidate  ON activity_events(candidate_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_visits_candidate  ON office_visits(candidate_id);
 
       CREATE INDEX IF NOT EXISTS idx_jobs_employer      ON jobs(employer_id);
       CREATE INDEX IF NOT EXISTS idx_jobs_status        ON jobs(status);

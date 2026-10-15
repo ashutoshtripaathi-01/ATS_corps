@@ -6,7 +6,6 @@ import {
   MapPin,
   Briefcase,
   CheckCircle,
-  Clock,
   FileText,
   User,
   Award,
@@ -24,6 +23,9 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { getCandidateProfile } from '@/lib/api';
+import {
+  PROGRESS_STEPS, progressIndex, STATUS_LABEL, STATUS_CHIP, isPaid,
+} from '@/constants/applicationStatus';
 import companyLogo from '@/assets/company logo.png';
 
 interface CandidateProfile {
@@ -47,6 +49,39 @@ interface CandidateProfile {
   discharge_book_path: string | null;
   police_verification_path: string | null;
   created_at: string;
+  application_status: string | null;
+  registration_ref: string | null;
+}
+
+/* ─── Application progress tracker ───────────────────────────────────────── */
+function ProgressTracker({ status }: { status: string | null }) {
+  const current = progressIndex(status);
+  const held    = status === 'APPLICATION_ON_HOLD' || status === 'APPLICATION_CANCELLED';
+
+  return (
+    <ol className='space-y-2.5'>
+      {PROGRESS_STEPS.map((s, i) => {
+        const done    = i < current;
+        const active  = i === current && !held;
+        return (
+          <li key={s.key} className='flex items-center gap-3'>
+            <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 text-[8px] font-bold
+              ${done   ? 'bg-green-500 text-white'
+              : active ? 'bg-[#F7A607] text-white ring-4 ring-[#F7A607]/20'
+              : 'bg-gray-200 dark:bg-white/10'}`}>
+              {done ? '✓' : ''}
+            </span>
+            <span className={`text-xs leading-tight
+              ${done   ? 'text-gray-500 dark:text-gray-400'
+              : active ? 'font-bold text-gray-900 dark:text-[#F0EFEA]'
+              : 'text-gray-400 dark:text-gray-600'}`}>
+              {s.label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 const FORCE_COLOR: Record<string, { pill: string; bar: string }> = {
@@ -111,43 +146,103 @@ export default function CandidateDashboard() {
       <div className='max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 py-6 lg:py-8 space-y-6'>
 
         {/* ════════════════════════════════════════
-            PENDING PAYMENT BANNER
+            MY APPLICATION — status, progress, resume
         ════════════════════════════════════════ */}
-        {!loading && profile && profile.payment_status === 'pending' && profile.full_name && (
+        {!loading && profile && profile.full_name && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            className='bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-4'
+            className='bg-white dark:bg-[#1e2227] border border-gray-100 dark:border-white/8 rounded-2xl shadow-sm overflow-hidden'
           >
-            <div className='w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0'>
-              <AlertCircle className='w-5 h-5 text-amber-600' />
+            <div className='grid grid-cols-1 md:grid-cols-[1.2fr_1fr]'>
+              {/* Left: status + action */}
+              <div className='p-5 md:border-r border-gray-50 dark:border-white/8'>
+                <div className='flex items-start justify-between gap-3 mb-3'>
+                  <div className='min-w-0'>
+                    <p className='text-[10px] font-bold text-gray-400 uppercase tracking-widest'>My Application</p>
+                    <p className='text-base font-extrabold text-gray-900 dark:text-[#F0EFEA] mt-0.5'
+                      style={{ fontFamily: 'Plus Jakarta Sans' }}>
+                      {profile.registration_ref ?? `ATS-${String(profile.id).padStart(5, '0')}`}
+                    </p>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0
+                    ${STATUS_CHIP[profile.application_status ?? ''] ?? 'bg-gray-100 text-gray-600'}`}>
+                    {STATUS_LABEL[profile.application_status ?? ''] ?? 'In Progress'}
+                  </span>
+                </div>
+
+                {/* Unpaid — reassure, then offer to resume */}
+                {!isPaid(profile.application_status) ? (
+                  <>
+                    <div className='bg-amber-50 dark:bg-amber-900/15 border border-amber-100 dark:border-amber-900/30 rounded-xl p-3.5 mb-4'>
+                      <p className='text-xs font-bold text-amber-900 dark:text-amber-300'>
+                        Your application has been saved.
+                      </p>
+                      <p className='text-xs text-amber-700 dark:text-amber-400/80 mt-1 leading-relaxed'>
+                        You can continue your application anytime by logging into your
+                        account. Amount payable: <strong>₹{profile.application_fee || 100}</strong>
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => navigate('/candidate/payment', {
+                        state: {
+                          fullName:       profile.full_name,
+                          mobile:         profile.mobile,
+                          rank:           profile.rank,
+                          force:          profile.force,
+                          post:           profile.post,
+                          loc1:           profile.loc1,
+                          loc2:           profile.loc2 ?? undefined,
+                          loc3:           profile.loc3 ?? undefined,
+                          applicationFee: profile.application_fee,
+                          unit:           profile.unit,
+                          retirementDate: profile.retirement_date,
+                          registrationRef: profile.registration_ref,
+                        },
+                      })}
+                      className='w-full h-11 bg-[#F7A607] hover:bg-[#e09500] text-white text-sm font-bold
+                        rounded-xl transition-colors flex items-center justify-center gap-2'
+                    >
+                      Continue Application <ChevronRight className='w-4 h-4' />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className='bg-green-50 dark:bg-green-900/15 border border-green-100 dark:border-green-900/30 rounded-xl p-3.5 mb-4'>
+                      <p className='text-xs font-bold text-green-900 dark:text-green-300'>
+                        Payment received — ₹{profile.application_fee}
+                      </p>
+                      <p className='text-xs text-green-700 dark:text-green-400/80 mt-1 leading-relaxed'>
+                        {profile.application_status === 'COMPLETED'
+                          ? 'Your registration is complete. Thank you.'
+                          : profile.application_status === 'DOCUMENTS_REJECTED'
+                            ? 'Some documents need to be re-uploaded — see the reason on each.'
+                            : profile.application_status === 'OFFICE_VISIT_PENDING'
+                              ? 'Documents verified. Our team will invite you to the office.'
+                              : 'Next step: upload your verification documents.'}
+                      </p>
+                    </div>
+                    {profile.application_status !== 'COMPLETED' && (
+                      <button
+                        onClick={() => navigate('/candidate/documents')}
+                        className='w-full h-11 bg-[#F7A607] hover:bg-[#e09500] text-white text-sm font-bold
+                          rounded-xl transition-colors flex items-center justify-center gap-2'
+                      >
+                        {profile.application_status === 'DOCUMENTS_REJECTED'
+                          ? 'Re-upload Documents' : 'My Documents'}
+                        <ChevronRight className='w-4 h-4' />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Right: progress */}
+              <div className='p-5 bg-gray-50/60 dark:bg-white/2'>
+                <p className='text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3'>Progress</p>
+                <ProgressTracker status={profile.application_status} />
+              </div>
             </div>
-            <div className='flex-1 min-w-0'>
-              <p className='text-sm font-bold text-amber-900'>Registration Incomplete — Payment Pending</p>
-              <p className='text-xs text-amber-700 mt-0.5'>
-                Your profile is saved. Complete payment of ₹{profile.application_fee} to activate your registration.
-              </p>
-            </div>
-            <button
-              onClick={() => navigate('/candidate/payment', {
-                state: {
-                  fullName:       profile.full_name,
-                  mobile:         profile.mobile,
-                  rank:           profile.rank,
-                  force:          profile.force,
-                  post:           profile.post,
-                  loc1:           profile.loc1,
-                  loc2:           profile.loc2 ?? undefined,
-                  loc3:           profile.loc3 ?? undefined,
-                  applicationFee: profile.application_fee,
-                  unit:           profile.unit,
-                  retirementDate: profile.retirement_date,
-                },
-              })}
-              className='shrink-0 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-colors'
-            >
-              Pay Now
-            </button>
           </motion.div>
         )}
 

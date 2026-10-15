@@ -11,7 +11,7 @@ import {
   Shield,
   MapPin,
 } from 'lucide-react';
-import { getAdminStats } from '@/lib/api';
+import { getAdminStats, getAdminMetrics } from '@/lib/api';
 
 interface Stats {
   totalCandidates: number;
@@ -39,6 +39,7 @@ const FORCE_COLOR: Record<string, string> = {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
+  const [metrics, setMetrics] = useState<Record<string, number> | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -46,7 +47,22 @@ export default function AdminDashboard() {
       .then(setStats)
       .catch(console.error)
       .finally(() => setLoading(false));
+    getAdminMetrics()
+      .then((m) => setMetrics(m as Record<string, number>))
+      .catch(console.error);
   }, []);
+
+  /* Lifecycle counts — every application is counted, not just the paid ones. */
+  const pipeline = [
+    { label: 'Total Applications', key: 'totalApplications',    filter: '',                   tone: 'text-gray-900' },
+    { label: 'Payment Pending',    key: 'paymentPending',       filter: 'payment_pending',    tone: 'text-amber-600' },
+    { label: 'Payment Successful', key: 'paymentSuccessful',    filter: 'payment_successful', tone: 'text-green-600' },
+    { label: 'Documents Pending',  key: 'documentsPending',     filter: 'documents_pending',  tone: 'text-amber-600' },
+    { label: 'Under Review',       key: 'documentsUnderReview', filter: 'documents_review',   tone: 'text-indigo-600' },
+    { label: 'Documents Verified', key: 'documentsVerified',    filter: 'documents_verified', tone: 'text-teal-600' },
+    { label: 'Office Visits',      key: 'officeVisitsPending',  filter: 'office_visit',       tone: 'text-purple-600' },
+    { label: 'Completed',          key: 'completed',            filter: 'completed',          tone: 'text-green-700' },
+  ];
 
   const statCards = [
     {
@@ -132,6 +148,36 @@ export default function AdminDashboard() {
           </motion.div>
         ))}
       </div>
+
+      {/* ── Application pipeline ────────────────────────────────────── */}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+        className='bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden'>
+        <div className='flex items-center justify-between px-4 py-3 border-b border-gray-50'>
+          <p className='text-sm font-bold text-gray-900'>Application Pipeline</p>
+          {metrics && (metrics.registrationsToday > 0 || metrics.paymentsToday > 0 || metrics.pendingFollowUps > 0) && (
+            <div className='flex items-center gap-3 text-[11px]'>
+              <span className='text-gray-500'>Today: <strong className='text-gray-900'>{metrics.registrationsToday}</strong> new</span>
+              <span className='text-gray-500'><strong className='text-green-600'>{metrics.paymentsToday}</strong> paid</span>
+              {metrics.pendingFollowUps > 0 && (
+                <span className='font-bold text-red-600'>{metrics.pendingFollowUps} follow-ups due</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className='grid grid-cols-2 sm:grid-cols-4 divide-x divide-y divide-gray-50'>
+          {pipeline.map(({ label, key, filter, tone }) => (
+            <button key={key}
+              onClick={() => navigate(`/admin/registrations${filter ? `?filter=${filter}` : ''}`)}
+              className='p-4 text-left hover:bg-gray-50 transition-colors'>
+              {metrics === null
+                ? <div className='h-7 w-10 bg-gray-100 rounded animate-pulse mb-1' />
+                : <p className={`text-2xl font-extrabold ${tone}`}>{metrics[key] ?? 0}</p>}
+              <p className='text-[11px] font-semibold text-gray-600 mt-0.5'>{label}</p>
+            </button>
+          ))}
+        </div>
+      </motion.div>
 
       <div className='grid md:grid-cols-2 gap-4'>
         {/* Force Breakdown */}

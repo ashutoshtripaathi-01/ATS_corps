@@ -3,12 +3,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, CreditCard, MapPin, Shield, CheckCircle, User, Briefcase,
-  Lock, ChevronRight, Zap, Award, Star, AlertCircle, XCircle, RefreshCw,
+  Lock, ChevronRight, Zap, Award, Star, AlertCircle, RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/useAppStore';
 import { toast } from '@/hooks/useToast';
-import { createPaymentOrder, verifyPayment } from '@/lib/api';
+import { createPaymentOrder, verifyPayment, abandonPayment } from '@/lib/api';
 import { setToken } from '@/lib/tokenStore';
 import companyLogo from '@/assets/company logo.png';
 
@@ -26,6 +26,7 @@ export interface CandidatePaymentState {
   retirementDate: string;
   otherPost?: string;
   gunLicense?: string;
+  registrationRef?: string | null;
 }
 
 type Screen = 'pay' | 'processing' | 'success' | 'failed' | 'cancelled';
@@ -45,7 +46,7 @@ interface VerifyResult {
 export default function CandidatePayment() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { setUser } = useAppStore();
+  const { setUser, user } = useAppStore();
 
   const state = location.state as CandidatePaymentState | null;
 
@@ -128,6 +129,12 @@ export default function CandidatePayment() {
     try {
       order = await createPaymentOrder();
     } catch (err: any) {
+      // An already-paid application comes back as a 409 — send them onward
+      // rather than showing a payment error.
+      if (/already been paid/i.test(err.message ?? '')) {
+        navigate('/candidate/documents', { replace: true });
+        return;
+      }
       setPaymentError(err.message || 'Failed to create payment order. Please try again.');
       setScreen('failed');
       setPaying(false);
@@ -185,7 +192,10 @@ export default function CandidatePayment() {
          */
         ondismiss: () => {
           if (!paymentSubmittedRef.current) {
-            // User closed without paying — show the non-alarming cancelled screen
+            // User closed without paying. The application is already saved —
+            // record the cancellation so admins can follow up, then show the
+            // reassuring "saved, pay later" screen.
+            abandonPayment({ razorpay_order_id: order.orderId, reason: 'cancelled' });
             setScreen('cancelled');
             setPaying(false);
           }
@@ -203,6 +213,11 @@ export default function CandidatePayment() {
        ondismiss will fire when the user eventually closes the modal. */
     rzp.on('payment.failed', (response: any) => {
       console.warn('[Razorpay] payment.failed:', response?.error?.description ?? response);
+      abandonPayment({
+        razorpay_order_id: order.orderId,
+        reason: 'failed',
+        detail: response?.error?.description,
+      });
     });
 
     rzp.open();
@@ -217,15 +232,19 @@ export default function CandidatePayment() {
 
   if (!state) return null;
 
+  /* Stable application reference — shown on both the success and the
+     "saved, pay later" screens so the applicant always has something to
+     quote when an admin calls them. */
+  const candidateId = verifyResult?.candidate?.id ?? user?.id;
+  const regRef =
+    verifyResult?.candidate?.registration_ref ??
+    state.registrationRef ??
+    (candidateId ? `ATS-${String(candidateId).padStart(5, '0')}` : '—');
+
   /* ══════════════════════════════════════════════════════════
       SUCCESS SCREEN
   ══════════════════════════════════════════════════════════ */
   if (screen === 'success') {
-    const candidateId = verifyResult?.candidate?.id;
-    const regRef =
-      verifyResult?.candidate?.registration_ref ??
-      (candidateId ? `ATS-${String(candidateId).padStart(5, '0')}` : '—');
-
     return (
       <div className='min-h-screen bg-gradient-to-br from-[#f0fdf4] to-[#f8faff] flex items-center justify-center px-4 py-12'>
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
@@ -296,8 +315,9 @@ export default function CandidatePayment() {
               <div className='bg-amber-50 border border-amber-100 rounded-2xl p-4 space-y-2'>
                 <p className='text-xs font-bold text-amber-700 uppercase tracking-wide'>What happens next?</p>
                 <p className='text-xs text-gray-600 leading-relaxed'>
-                  Our verification team will review your service documents (typically within 2–3 business days).
-                  Once verified, your profile will be visible to employers matching your preferences.
+                  Document upload is now unlocked. Upload your Aadhaar, PAN, photograph
+                  and service certificate — our team verifies them (typically within 2–3
+                  business days) and then invites you to the office to complete the paperwork.
                 </p>
               </div>
             </div>
@@ -305,9 +325,14 @@ export default function CandidatePayment() {
 
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
             <Button size='lg' className='w-full rounded-2xl text-sm font-bold h-13 gap-2'
-              onClick={() => navigate('/candidate/dashboard', { replace: true })}>
-              Go to Dashboard <ChevronRight className='w-4 h-4' />
+              onClick={() => navigate('/candidate/documents', { replace: true })}>
+              Upload Documents <ChevronRight className='w-4 h-4' />
             </Button>
+            <button type='button' onClick={() => navigate('/candidate/dashboard', { replace: true })}
+              className='w-full h-11 mt-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold
+                text-gray-600 hover:bg-gray-50 transition-colors'>
+              Go to Dashboard
+            </button>
             <p className='text-center text-xs text-gray-400 mt-3'>
               Confirmation will be sent to your registered mobile number.
             </p>
@@ -325,24 +350,38 @@ export default function CandidatePayment() {
       <div className='min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12'>
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.35 }} className='w-full max-w-md text-center'>
-          <div className='w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6'>
-            <XCircle className='w-10 h-10 text-gray-400' />
+          {/* Closing the payment window is a pause, not a failure — the tone
+              here matters, the application is completely safe. */}
+          <div className='w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6'>
+            <CheckCircle className='w-10 h-10 text-green-500' />
           </div>
-          <h2 className='text-2xl font-extrabold text-gray-900 mb-2' style={{ fontFamily: 'Plus Jakarta Sans' }}>
-            Payment not completed
+          <h2 className='text-2xl font-extrabold text-gray-900 mb-3' style={{ fontFamily: 'Plus Jakarta Sans' }}>
+            Your application has been saved
           </h2>
-          <p className='text-sm text-gray-500 mb-2'>You closed the payment window before completing.</p>
-          <p className='text-sm text-gray-500 mb-8'>
-            Your registration details are saved — you can complete payment whenever you're ready.
+          <p className='text-sm text-gray-500 mb-2 leading-relaxed'>
+            Payment is still pending. Nothing has been lost — your details are
+            safely on record.
           </p>
+          <p className='text-sm text-gray-500 mb-7 leading-relaxed'>
+            You can complete payment whenever you're ready, just by logging back
+            into your account.
+          </p>
+
+          {regRef !== '—' && (
+            <div className='bg-white border border-gray-100 rounded-2xl px-4 py-3 mb-6 inline-flex flex-col'>
+              <span className='text-[10px] text-gray-400 uppercase tracking-widest'>Application ID</span>
+              <span className='text-sm font-bold text-gray-900 mt-0.5'>{regRef}</span>
+            </div>
+          )}
+
           <div className='space-y-3'>
             <Button size='lg' className='w-full rounded-xl text-sm font-bold gap-2' onClick={resetToPay}>
-              <CreditCard className='w-4 h-4' /> Complete Payment
+              <CreditCard className='w-4 h-4' /> Continue to Payment
             </Button>
-            <button type='button' onClick={() => navigate('/candidate/register', { replace: true })}
+            <button type='button' onClick={() => navigate('/candidate/dashboard', { replace: true })}
               className='w-full h-11 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-600
                 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2'>
-              <ArrowLeft className='w-4 h-4' /> Back to Registration
+              <ArrowLeft className='w-4 h-4' /> Go to My Dashboard
             </button>
           </div>
         </motion.div>

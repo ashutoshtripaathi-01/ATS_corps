@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, CheckCircle, Shield, Anchor, Plane, Star,
-  CreditCard, MapPin, Briefcase, FileText, Calendar, AlertCircle, X, Zap,
-  Upload, ArrowLeft, Lock, Award, RefreshCw, Pencil, Loader2,
+  CreditCard, MapPin, Briefcase, FileText, Calendar, AlertCircle, Zap,
+  ArrowLeft, Lock, Award, Pencil, Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/useAppStore';
 import { toast } from '@/hooks/useToast';
 import { BRAND } from '@/constants';
 import { saveProfile, updateDraft, getCandidateProfile } from '@/lib/api';
+import { isPaid } from '@/constants/applicationStatus';
 import companyLogo from '@/assets/company logo.png';
 
 /* ─── Data ───────────────────────────────────────────────────────────────── */
@@ -37,24 +38,24 @@ const LOCATIONS = ['Upper Assam', 'Guwahati & Around', 'Lower Assam'] as const;
 const REGISTRATION_FEE = 100;
 
 /* ─── Step metadata ───────────────────────────────────────────────────────── */
+/* Documents are no longer collected here — they unlock after payment and are
+   uploaded from /candidate/documents.                                        */
 const STEPS = [
-  { label: 'Personal & Service',       shortLabel: 'Personal',   desc: 'Force, rank & personal details' },
-  { label: 'Documents & Verification', shortLabel: 'Documents',  desc: 'Service documents & verification' },
-  { label: 'Job Preferences',          shortLabel: 'Preferences', desc: 'Preferred roles & locations' },
-  { label: 'Review & Payment',         shortLabel: 'Review',     desc: 'Review your details & complete registration' },
+  { label: 'Personal & Service', shortLabel: 'Personal',    desc: 'Force, rank & personal details' },
+  { label: 'Job Preferences',    shortLabel: 'Preferences', desc: 'Preferred roles & locations' },
+  { label: 'Review & Payment',   shortLabel: 'Review',      desc: 'Review your details & complete registration' },
 ];
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface FormState {
   force: Force | ''; rank: string; fullName: string; mobile: string; unit: string;
-  idCard: File | null; retirementDate: string; dischargeBook: File | null;
-  policeVerification: File | null; post: string; gunLicense: string;
+  retirementDate: string; post: string; gunLicense: string;
   otherPost: string; loc1: string; loc2: string; loc3: string;
 }
 const INITIAL: FormState = {
-  force: '', rank: '', fullName: '', mobile: '', unit: '', idCard: null,
-  retirementDate: '', dischargeBook: null, policeVerification: null,
-  post: 'Any', gunLicense: '', otherPost: '', loc1: '', loc2: '', loc3: '',
+  force: '', rank: '', fullName: '', mobile: '', unit: '',
+  retirementDate: '', post: 'Any', gunLicense: '', otherPost: '',
+  loc1: '', loc2: '', loc3: '',
 };
 
 interface ServerProfile {
@@ -62,8 +63,7 @@ interface ServerProfile {
   mobile: string | null; unit: string | null; retirement_date: string | null;
   post: string | null; other_post: string | null; gun_license: string | null;
   loc1: string | null; loc2: string | null; loc3: string | null;
-  id_card_path: string | null; discharge_book_path: string | null;
-  police_verification_path: string | null; payment_status: string;
+  payment_status: string; application_status: string | null;
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -71,9 +71,8 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 function getResumeStep(p: ServerProfile): number {
   if (!p.mobile && !p.force && !p.full_name) return 1;
-  if (!p.id_card_path || !p.discharge_book_path) return 2;
-  if (!p.loc1) return 3;
-  return 4;
+  if (!p.loc1) return 2;
+  return 3;
 }
 
 function formatDate(iso: string): string {
@@ -159,114 +158,6 @@ function SelectInput({
   );
 }
 
-/* ─── Document upload card ────────────────────────────────────────────────── */
-function DocUpload({
-  label, required, optional, description, file, onChange, accept = 'image/*,.pdf',
-  serverUploaded = false,
-}: {
-  label: string; required?: boolean; optional?: boolean; description?: string;
-  file: File | null; onChange: (f: File | null) => void; accept?: string;
-  serverUploaded?: boolean;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  const sizeMB = file ? (file.size / (1024 * 1024)).toFixed(1) : null;
-  const isUploaded = !!file || serverUploaded;
-
-  return (
-    <div className='bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm'>
-      {/* Card header */}
-      <div className='flex items-start justify-between px-4 pt-4 pb-3 border-b border-gray-50'>
-        <div className='flex items-center gap-2.5'>
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0
-            ${isUploaded ? 'bg-green-50' : required ? 'bg-[#F7A607]/10' : 'bg-gray-100'}`}>
-            <FileText className={`w-4 h-4 ${isUploaded ? 'text-green-600' : required ? 'text-[#F7A607]' : 'text-gray-400'}`} />
-          </div>
-          <div>
-            <p className='text-sm font-semibold text-gray-900 leading-tight'>{label}</p>
-            {description && <p className='text-xs text-gray-500 mt-0.5'>{description}</p>}
-          </div>
-        </div>
-        {required && !isUploaded && (
-          <span className='text-[10px] font-bold text-[#F7A607] bg-[#F7A607]/10 px-2 py-0.5 rounded-full shrink-0 ml-2 mt-0.5'>
-            Required
-          </span>
-        )}
-        {optional && !isUploaded && (
-          <span className='text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full shrink-0 ml-2 mt-0.5'>
-            Optional
-          </span>
-        )}
-      </div>
-
-      {/* Upload area */}
-      <div className='p-4'>
-        <input
-          ref={ref}
-          type='file'
-          accept={accept}
-          className='hidden'
-          aria-label={`Upload ${label}`}
-          onChange={(e) => onChange(e.target.files?.[0] ?? null)}
-        />
-
-        {file ? (
-          /* New file selected */
-          <div className='flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl'>
-            <div className='w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center shrink-0'>
-              <CheckCircle className='w-4 h-4 text-green-600' />
-            </div>
-            <div className='flex-1 min-w-0'>
-              <p className='text-sm font-semibold text-gray-900 truncate'>{file.name}</p>
-              <p className='text-xs text-gray-500 mt-0.5'>{sizeMB} MB · Selected</p>
-            </div>
-            <div className='flex items-center gap-1.5 shrink-0'>
-              <button type='button' onClick={() => ref.current?.click()}
-                aria-label={`Replace ${label}`}
-                className='flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors'>
-                <RefreshCw className='w-3 h-3' /> Replace
-              </button>
-              <button type='button' onClick={() => onChange(null)} aria-label={`Remove ${label}`}
-                className='p-1.5 rounded-lg hover:bg-red-50 transition-colors text-gray-400 hover:text-red-500'>
-                <X className='w-3.5 h-3.5' />
-              </button>
-            </div>
-          </div>
-        ) : serverUploaded ? (
-          /* Already on server */
-          <div className='flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl'>
-            <div className='w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center shrink-0'>
-              <CheckCircle className='w-4 h-4 text-green-600' />
-            </div>
-            <div className='flex-1 min-w-0'>
-              <p className='text-sm font-semibold text-gray-900'>Already uploaded</p>
-              <p className='text-xs text-gray-500 mt-0.5'>Securely on record · uploaded previously</p>
-            </div>
-            <button type='button' onClick={() => ref.current?.click()}
-              aria-label={`Replace ${label}`}
-              className='shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors'>
-              <RefreshCw className='w-3 h-3' /> Replace
-            </button>
-          </div>
-        ) : (
-          /* Empty — upload prompt */
-          <button type='button' onClick={() => ref.current?.click()} aria-label={`Upload ${label}`}
-            className='w-full flex items-center gap-4 px-4 py-4 bg-gray-50 border border-dashed border-gray-300 rounded-xl
-              hover:bg-gray-100 hover:border-[#F7A607]/50 active:scale-[0.99] transition-all text-left focus-visible:outline-none
-              focus-visible:ring-2 focus-visible:ring-[#F7A607]/40'>
-            <div className='w-10 h-10 bg-white border border-gray-200 rounded-xl flex items-center justify-center shrink-0 shadow-sm'>
-              <Upload className='w-4 h-4 text-gray-500' />
-            </div>
-            <div>
-              <p className='text-sm font-semibold text-gray-700'>Click to select file</p>
-              <p className='text-xs text-gray-400 mt-0.5'>JPG, PNG or PDF · Maximum 5 MB</p>
-            </div>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /* ─── Review section atoms ───────────────────────────────────────────────── */
 function ReviewSection({
   title, children, onEdit, editLabel = 'Edit',
@@ -292,22 +183,6 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
     <div className='flex justify-between items-start gap-4 py-0.5'>
       <span className='text-xs text-gray-400 shrink-0 mt-0.5'>{label}</span>
       <span className='text-sm font-semibold text-gray-900 text-right max-w-[60%] break-words'>{value || '—'}</span>
-    </div>
-  );
-}
-
-function DocStatusRow({ label, uploaded, optional }: { label: string; uploaded: boolean; optional?: boolean }) {
-  return (
-    <div className='flex items-center gap-3'>
-      {uploaded
-        ? <CheckCircle className='w-4 h-4 text-green-500 shrink-0' />
-        : <div className='w-4 h-4 rounded-full border-2 border-dashed border-gray-300 shrink-0' />
-      }
-      <span className={`text-sm flex-1 leading-tight ${uploaded ? 'text-gray-800 font-medium' : 'text-gray-400'}`}>
-        {label}
-      </span>
-      {!uploaded && optional  && <span className='text-xs text-gray-400 shrink-0 italic'>Optional</span>}
-      {!uploaded && !optional && <span className='text-xs text-amber-500 shrink-0 font-semibold'>Required</span>}
     </div>
   );
 }
@@ -431,69 +306,7 @@ function PersonalServiceStep({
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   STEP 2 — Documents & Verification
-══════════════════════════════════════════════════════════════════════════ */
-function DocumentsVerificationStep({
-  data, update, errors, serverProfile,
-}: {
-  data: FormState;
-  update: (k: keyof FormState, v: any) => void;
-  errors: Partial<Record<keyof FormState, string>>;
-  serverProfile: ServerProfile | null;
-}) {
-  return (
-    <div className='space-y-6 pt-2 pb-8'>
-      <div>
-        <h2 className='text-lg font-extrabold text-gray-900 leading-tight' style={{ fontFamily: 'Plus Jakarta Sans' }}>
-          Upload your service documents
-        </h2>
-        <p className='text-sm text-gray-500 mt-1'>
-          These documents are used to verify your ex-serviceman status and eligibility.
-        </p>
-      </div>
-
-      <div className='flex gap-3 p-4 bg-gray-50 border border-gray-200 rounded-xl'>
-        <Lock className='w-4 h-4 text-gray-500 shrink-0 mt-0.5' />
-        <div>
-          <p className='text-sm font-semibold text-gray-700'>Your documents are private</p>
-          <p className='text-xs text-gray-500 mt-0.5 leading-relaxed'>
-            Documents are used only for candidate verification. They are not visible to employers or other candidates.
-          </p>
-          <p className='text-xs text-gray-400 mt-2'>Accepted formats: JPG, PNG, PDF · Maximum 5 MB per file</p>
-        </div>
-      </div>
-
-      <div className='space-y-3'>
-        <p className='text-xs font-bold text-gray-500 uppercase tracking-widest'>Required Documents</p>
-        <div>
-          <DocUpload label='Military / Ex-Serviceman Identity Card'
-            description='Front side — clear photo or scanned copy' required
-            file={data.idCard} onChange={(f) => update('idCard', f)}
-            serverUploaded={!!serverProfile?.id_card_path} />
-          <FieldError msg={errors.idCard} />
-        </div>
-        <div>
-          <DocUpload label='Discharge Book'
-            description='Army / Navy / Air Force / Para Military Discharge Book' required
-            file={data.dischargeBook} onChange={(f) => update('dischargeBook', f)}
-            serverUploaded={!!serverProfile?.discharge_book_path} />
-          <FieldError msg={errors.dischargeBook} />
-        </div>
-      </div>
-
-      <div className='space-y-3'>
-        <p className='text-xs font-bold text-gray-500 uppercase tracking-widest'>Optional Documents</p>
-        <DocUpload label='Police Verification Certificate'
-          description='Clearance certificate from your home district police · Uploading this may help speed up verification.'
-          optional file={data.policeVerification} onChange={(f) => update('policeVerification', f)}
-          serverUploaded={!!serverProfile?.police_verification_path} />
-      </div>
-    </div>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
-   STEP 3 — Job Preferences
+   STEP 2 — Job Preferences
 ══════════════════════════════════════════════════════════════════════════ */
 function JobPreferencesStep({
   data, update, errors,
@@ -616,22 +429,18 @@ function JobPreferencesStep({
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   STEP 4 — Review & Payment (full redesign)
+   STEP 3 — Review & Payment
 ══════════════════════════════════════════════════════════════════════════ */
 function ReviewPaymentStep({
-  data, serverProfile, onProceed, onEdit, onGoBack, saving,
+  data, onProceed, onEdit, onGoBack, saving,
 }: {
   data: FormState;
-  serverProfile: ServerProfile | null;
   onProceed: () => void;
   onEdit: (step: number) => void;
   onGoBack: () => void;
   saving?: boolean;
 }) {
   const fee = REGISTRATION_FEE;
-  const docIdCard    = !!(data.idCard    || serverProfile?.id_card_path);
-  const docDischarge = !!(data.dischargeBook || serverProfile?.discharge_book_path);
-  const docPolice    = !!(data.policeVerification || serverProfile?.police_verification_path);
 
   if (!data.loc1) {
     return (
@@ -671,20 +480,25 @@ function ReviewPaymentStep({
         <ReviewRow label='Date of Retirement' value={data.retirementDate ? formatDate(data.retirementDate) : ''} />
       </ReviewSection>
 
-      {/* Documents */}
-      <ReviewSection title='Documents' onEdit={() => onEdit(2)} editLabel='Review Documents'>
-        <DocStatusRow label='Military / Ex-Serviceman Identity Card' uploaded={docIdCard} />
-        <DocStatusRow label='Discharge Book'                         uploaded={docDischarge} />
-        <DocStatusRow label='Police Verification Certificate'        uploaded={docPolice} optional />
-      </ReviewSection>
-
       {/* Job Preferences */}
-      <ReviewSection title='Job Preferences' onEdit={() => onEdit(3)}>
+      <ReviewSection title='Job Preferences' onEdit={() => onEdit(2)}>
         <ReviewRow label='Preferred Role' value={data.post === 'Other' ? (data.otherPost || 'Other') : data.post} />
         <ReviewRow label='1st Priority'   value={data.loc1} />
         {data.loc2 && <ReviewRow label='2nd Priority' value={data.loc2} />}
         {data.loc3 && <ReviewRow label='3rd Priority' value={data.loc3} />}
       </ReviewSection>
+
+      {/* Documents come after payment — set expectations here */}
+      <div className='flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-2xl p-4'>
+        <FileText className='w-4 h-4 text-blue-600 shrink-0 mt-0.5' />
+        <div>
+          <p className='text-xs font-bold text-blue-900'>Documents come next</p>
+          <p className='text-xs text-blue-700 mt-0.5 leading-relaxed'>
+            After payment you'll be asked to upload your Aadhaar, PAN, photograph
+            and service certificate for verification.
+          </p>
+        </div>
+      </div>
 
       {/* Registration Fee */}
       <div className='bg-white border border-gray-100 rounded-2xl p-5 shadow-sm'>
@@ -745,7 +559,9 @@ export default function CandidateRegister() {
     if (!user?.id) { setProfileLoading(false); return; }
     getCandidateProfile(user.id)
       .then((p: ServerProfile) => {
-        if (p.payment_status === 'paid') {
+        // Already paid — the application has moved past registration, so send
+        // them to the dashboard rather than letting them re-register.
+        if (p.payment_status === 'paid' || isPaid(p.application_status)) {
           navigate('/candidate/dashboard', { replace: true });
           return;
         }
@@ -757,10 +573,7 @@ export default function CandidateRegister() {
           fullName:        p.full_name        || '',
           mobile:          p.mobile           || '',
           unit:            p.unit             || '',
-          idCard:          null,               // File objects can't be restored
           retirementDate:  p.retirement_date  ? p.retirement_date.split('T')[0] : '',
-          dischargeBook:   null,
-          policeVerification: null,
           post:            p.post             || 'Any',
           gunLicense:      p.gun_license      || '',
           otherPost:       p.other_post       || '',
@@ -831,13 +644,6 @@ export default function CandidateRegister() {
     }
 
     if (step === 2) {
-      const idOk  = !!(data.idCard       || serverProfile?.id_card_path);
-      const dbOk  = !!(data.dischargeBook || serverProfile?.discharge_book_path);
-      if (!idOk) e.idCard       = 'Please upload your Ex-Serviceman Identity Card';
-      if (!dbOk) e.dischargeBook = 'Please upload your Discharge Book';
-    }
-
-    if (step === 3) {
       if (data.post === 'Gunman' && !data.gunLicense.trim()) e.gunLicense = 'License number is required';
       if (data.post === 'Other'  && !data.otherPost.trim())  e.otherPost  = 'Please specify the role';
       if (!data.loc1) e.loc1 = 'Please select your first preferred location';
@@ -857,7 +663,7 @@ export default function CandidateRegister() {
     if (!validate()) return;
     if (returnToReview) {
       setReturnToReview(false);
-      setStep(4);
+      setStep(3);
     } else {
       setStep((s) => s + 1);
     }
@@ -867,7 +673,7 @@ export default function CandidateRegister() {
   const goBack = () => {
     if (returnToReview) {
       setReturnToReview(false);
-      setStep(4);
+      setStep(3);
       window.scrollTo(0, 0);
       return;
     }
@@ -886,25 +692,23 @@ export default function CandidateRegister() {
   const handleProceed = async () => {
     setSaving(true);
     try {
-      const fd = new FormData();
-      fd.append('mobile',         data.mobile);
-      fd.append('force',          data.force);
-      fd.append('rank',           data.rank);
-      fd.append('fullName',       data.fullName);
-      fd.append('unit',           data.unit);
-      fd.append('retirementDate', data.retirementDate);
-      fd.append('post',           data.post);
-      if (data.otherPost)  fd.append('otherPost',  data.otherPost);
-      if (data.gunLicense) fd.append('gunLicense', data.gunLicense);
-      fd.append('loc1', data.loc1);
-      if (data.loc2) fd.append('loc2', data.loc2);
-      if (data.loc3) fd.append('loc3', data.loc3);
-      fd.append('applicationFee', String(REGISTRATION_FEE));
-      if (data.idCard)             fd.append('idCard',             data.idCard);
-      if (data.dischargeBook)      fd.append('dischargeBook',      data.dischargeBook);
-      if (data.policeVerification) fd.append('policeVerification', data.policeVerification);
-
-      await saveProfile(fd);
+      // The application is persisted here — before any payment is attempted —
+      // so it survives a cancelled or failed checkout.
+      const saved = await saveProfile({
+        mobile:         data.mobile,
+        force:          data.force,
+        rank:           data.rank,
+        fullName:       data.fullName,
+        unit:           data.unit,
+        retirementDate: data.retirementDate,
+        post:           data.post,
+        otherPost:      data.otherPost,
+        gunLicense:     data.gunLicense,
+        loc1:           data.loc1,
+        loc2:           data.loc2,
+        loc3:           data.loc3,
+        applicationFee: REGISTRATION_FEE,
+      });
 
       navigate('/candidate/payment', {
         state: {
@@ -921,6 +725,7 @@ export default function CandidateRegister() {
           retirementDate: data.retirementDate,
           otherPost:      data.otherPost,
           gunLicense:     data.gunLicense,
+          registrationRef: saved.registrationRef,
         },
       });
     } catch (err: any) {
@@ -1131,14 +936,13 @@ export default function CandidateRegister() {
                 initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2 }}>
                 {step === 1 && <PersonalServiceStep data={data} update={update} errors={errors} />}
-                {step === 2 && <DocumentsVerificationStep data={data} update={update} errors={errors} serverProfile={serverProfile} />}
-                {step === 3 && <JobPreferencesStep data={data} update={update} errors={errors} />}
-                {step === 4 && (
+                {step === 2 && <JobPreferencesStep data={data} update={update} errors={errors} />}
+                {step === 3 && (
                   <ReviewPaymentStep
-                    data={data} serverProfile={serverProfile}
+                    data={data}
                     saving={saving} onProceed={handleProceed}
                     onEdit={handleEditSection}
-                    onGoBack={() => { setReturnToReview(false); setStep(3); window.scrollTo(0, 0); }}
+                    onGoBack={() => { setReturnToReview(false); setStep(2); window.scrollTo(0, 0); }}
                   />
                 )}
               </motion.div>
@@ -1146,8 +950,8 @@ export default function CandidateRegister() {
           </div>
         </div>
 
-        {/* Bottom continue bar — steps 1–3 only */}
-        {step < 4 && (
+        {/* Bottom continue bar — steps 1–2 only */}
+        {step < 3 && (
           <div className='fixed bottom-0 left-0 right-0 lg:sticky lg:bottom-auto bg-white border-t border-gray-100 px-4 lg:px-8 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] lg:shadow-none'>
             <div className='max-w-3xl lg:max-w-none mx-auto'>
               <Button size='lg' className='w-full lg:w-auto lg:min-w-[220px] rounded-xl text-sm font-bold gap-2'
