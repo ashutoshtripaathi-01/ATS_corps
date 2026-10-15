@@ -35,7 +35,7 @@ const RANKS: Record<Force, string[]> = {
 const POSTS    = ['Any', 'Guard Unarmed', 'Gunman', 'Security Supervisor', 'Other'] as const;
 const LOCATIONS = ['Upper Assam', 'Guwahati & Around', 'Lower Assam'] as const;
 
-const REGISTRATION_FEE = 100;
+const REGISTRATION_FEE = 5000;
 
 /* ─── Step metadata ───────────────────────────────────────────────────────── */
 /* Documents are no longer collected here — they unlock after payment and are

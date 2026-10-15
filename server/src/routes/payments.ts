@@ -12,8 +12,8 @@ import { S, PAID_STATUSES } from '../lib/applicationStatus'
 
 const router = Router()
 
-// ₹100 registration fee (10000 paise)
-const REGISTRATION_FEE_PAISE = 10000
+// ₹5,000 registration fee (500000 paise)
+const REGISTRATION_FEE_PAISE = 500000
 
 /* ── POST /api/payments/create-order ────────────────────────────────── */
 router.post('/create-order', requireAuth('candidate'), async (req: Request, res: Response) => {
