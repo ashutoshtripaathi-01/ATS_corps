@@ -51,6 +51,28 @@ async function req<T = any>(url: string, opts?: RequestInit, _retry = true): Pro
   return res.json() as Promise<T>
 }
 
+/* ── Public runtime config ───────────────────────────────────────────── */
+/**
+ * Public identifiers served by the API rather than frozen into the bundle at
+ * build time. Cached as a single in-flight promise so concurrent callers share
+ * one request.
+ */
+export interface PublicConfig {
+  googleClientId: string | null
+  razorpayKeyId: string | null
+}
+
+let _config: Promise<PublicConfig> | null = null
+
+export const getPublicConfig = (): Promise<PublicConfig> => {
+  if (!_config) {
+    _config = fetch(`${API_BASE}/config`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`config ${r.status}`))))
+      .catch((e) => { _config = null; throw e })
+  }
+  return _config
+}
+
 /* ── Auth ────────────────────────────────────────────────────────────── */
 export const adminLogin = (email: string, password: string) =>
   req<{ accessToken: string; user: { id: string; name: string; email: string; role: string } }>(

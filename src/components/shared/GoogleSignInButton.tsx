@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { getPublicConfig } from '@/lib/api';
 
 /**
  * Renders Google's own sign-in button via Google Identity Services.
@@ -49,13 +50,34 @@ export function GoogleSignInButton({
   // would make it flicker on every parent state change.
   useEffect(() => { cbRef.current = onCredential; }, [onCredential]);
 
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+  const [clientId, setClientId] = useState<string | null>(
+    (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? null,
+  );
+
+  /*
+   * Vite freezes import.meta.env at build time, so a client id set on the
+   * server after the bundle was built is simply absent from it. When the
+   * build-time value is missing we ask the API for it instead, which keeps
+   * the server as the single source of truth and means rotating the id needs
+   * a restart rather than a rebuild and redeploy.
+   */
+  useEffect(() => {
+    if (clientId) return;
+    let cancelled = false;
+
+    getPublicConfig()
+      .then((cfg) => {
+        if (cancelled) return;
+        if (cfg.googleClientId) setClientId(cfg.googleClientId);
+        else setError('Google sign-in is not configured');
+      })
+      .catch(() => { if (!cancelled) setError('Google sign-in is unavailable right now'); });
+
+    return () => { cancelled = true; };
+  }, [clientId]);
 
   useEffect(() => {
-    if (!clientId) {
-      setError('Google sign-in is not configured');
-      return;
-    }
+    if (!clientId) return;
     let cancelled = false;
 
     loadGsi()

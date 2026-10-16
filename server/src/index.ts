@@ -147,6 +147,29 @@ app.get('/api/health', (_req, res) =>
   }),
 )
 
+/* ── GET /api/config ── public runtime configuration ─────────────────── */
+/*
+ * Values the browser legitimately needs and which are public by design: an
+ * OAuth client id and a Razorpay key id both ship in the bundle anyway.
+ *
+ * Serving them at runtime rather than baking them in at build time means the
+ * server is the single source of truth. Vite freezes import.meta.env at build
+ * time, so a value set on the box after the build simply is not there — which
+ * is exactly how the Google button ended up reporting itself unconfigured
+ * while the backend was correctly set up all along. Read at runtime, changing
+ * the id needs a restart, not a rebuild and redeploy.
+ *
+ * Only ever expose public identifiers here. Secrets — RAZORPAY_KEY_SECRET,
+ * JWT_SECRET, database credentials — must never appear in this response.
+ */
+app.get('/api/config', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=300')
+  res.json({
+    googleClientId: process.env.GOOGLE_CLIENT_ID || null,
+    razorpayKeyId:  process.env.RAZORPAY_KEY_ID  || null,
+  })
+})
+
 /* ── Error handling ──────────────────────────────────────────────────── */
 /*
  * Catches anything a route forwards via next(err) — including rejections from
