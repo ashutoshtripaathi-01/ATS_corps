@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Users, Search, MapPin, Shield, ChevronDown, Eye } from 'lucide-react'
 import { getAdminCandidates } from '@/lib/api'
+import { usePaymentsEnabled } from '@/hooks/usePaymentsEnabled'
 
 interface Candidate {
   id: number
@@ -35,6 +36,7 @@ function formatDate(iso: string) {
 }
 
 export default function AdminCandidates() {
+  const paymentsEnabled = usePaymentsEnabled()
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [loading, setLoading]       = useState(true)
   const [search, setSearch]         = useState('')
@@ -133,7 +135,9 @@ export default function AdminCandidates() {
                 <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">Post Applied</th>
                 <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">Location Pref.</th>
                 <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">Registered</th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">Payment</th>
+                {paymentsEnabled && (
+                  <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">Payment</th>
+                )}
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -166,11 +170,13 @@ export default function AdminCandidates() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500">{formatDate(c.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex text-[10px] font-semibold px-2.5 py-1 rounded-full ${STATUS_STYLE[c.payment_status] ?? 'bg-gray-100 text-gray-500'}`}>
-                      {c.payment_status.charAt(0).toUpperCase() + c.payment_status.slice(1)}
-                    </span>
-                  </td>
+                  {paymentsEnabled && (
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex text-[10px] font-semibold px-2.5 py-1 rounded-full ${STATUS_STYLE[c.payment_status] ?? 'bg-gray-100 text-gray-500'}`}>
+                        {c.payment_status.charAt(0).toUpperCase() + c.payment_status.slice(1)}
+                      </span>
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <button className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
                       <Eye className="w-4 h-4 text-gray-400" />
@@ -211,15 +217,17 @@ export default function AdminCandidates() {
                 {c.force}
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-2 pt-3 border-t border-gray-50 text-xs">
+            <div className={`grid ${paymentsEnabled ? 'grid-cols-3' : 'grid-cols-2'} gap-2 pt-3 border-t border-gray-50 text-xs`}>
               <div><p className="text-[10px] text-gray-400">Post</p><p className="font-medium text-gray-700">{c.post}</p></div>
               <div><p className="text-[10px] text-gray-400">Location</p><p className="font-medium text-gray-700">{c.loc1}</p></div>
-              <div>
-                <p className="text-[10px] text-gray-400">Payment</p>
-                <span className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLE[c.payment_status] ?? 'bg-gray-100 text-gray-500'}`}>
-                  {c.payment_status}
-                </span>
-              </div>
+              {paymentsEnabled && (
+                <div>
+                  <p className="text-[10px] text-gray-400">Payment</p>
+                  <span className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLE[c.payment_status] ?? 'bg-gray-100 text-gray-500'}`}>
+                    {c.payment_status}
+                  </span>
+                </div>
+              )}
             </div>
           </motion.div>
         ))}

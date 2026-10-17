@@ -10,6 +10,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { toast } from '@/hooks/useToast';
 import { createPaymentOrder, verifyPayment, abandonPayment } from '@/lib/api';
 import { setToken } from '@/lib/tokenStore';
+import { usePaymentsEnabledState } from '@/hooks/usePaymentsEnabled';
 import companyLogo from '@/assets/company logo.png';
 
 export interface CandidatePaymentState {
@@ -49,6 +50,7 @@ export default function CandidatePayment() {
   const { setUser, user } = useAppStore();
 
   const state = location.state as CandidatePaymentState | null;
+  const { enabled: paymentsEnabled, loading: paymentsConfigLoading } = usePaymentsEnabledState();
 
   const [screen,       setScreen]       = useState<Screen>('pay');
   const [rzpReady,     setRzpReady]     = useState(false);
@@ -70,8 +72,33 @@ export default function CandidatePayment() {
     if (!state) navigate('/candidate/register', { replace: true });
   }, [state, navigate]);
 
-  /* load Razorpay checkout.js */
+  /*
+   * Registration is currently free — this page should not be reachable at
+   * all. The backend already refuses /api/payments/* while
+   * PAYMENTS_ENABLED is unset, so nothing a candidate does here could
+   * actually charge them; this redirect just keeps a bookmarked or
+   * back-button link from landing on a page that no longer applies.
+   *
+   * Waits for paymentsConfigLoading to clear before deciding, so a real
+   * payments-enabled session is never bounced during the one frame before
+   * the config call resolves.
+   */
   useEffect(() => {
+    if (!paymentsConfigLoading && !paymentsEnabled) {
+      navigate('/candidate/documents', { replace: true });
+    }
+  }, [paymentsConfigLoading, paymentsEnabled, navigate]);
+
+  /*
+   * Load Razorpay's checkout.js — only once payments are confirmed on.
+   * Loading a third-party script unconditionally on mount would fetch it
+   * from checkout.razorpay.com in the brief moment before the redirect
+   * above fires, which is not really "hidden". Waiting for
+   * paymentsConfigLoading to clear means this effect never runs at all for
+   * a free-registration session.
+   */
+  useEffect(() => {
+    if (paymentsConfigLoading || !paymentsEnabled) return;
     if (document.getElementById('rzp-script')) { setRzpReady(true); return; }
     const s = document.createElement('script');
     s.id    = 'rzp-script';
@@ -82,7 +109,7 @@ export default function CandidatePayment() {
       toast({ title: 'Could not load payment SDK', description: 'Check your internet connection and try again.', variant: 'error' });
     };
     document.head.appendChild(s);
-  }, []);
+  }, [paymentsConfigLoading, paymentsEnabled]);
 
   /* ── verify payment + update store ── */
   const finalizeRegistration = async (payment: {
@@ -231,6 +258,8 @@ export default function CandidatePayment() {
   };
 
   if (!state) return null;
+  // Avoid a flash of payment UI while the redirect above is about to fire.
+  if (!paymentsConfigLoading && !paymentsEnabled) return null;
 
   /* Stable application reference — shown on both the success and the
      "saved, pay later" screens so the applicant always has something to

@@ -97,7 +97,38 @@ export function nextStatuses(from: string | null): AppStatus[] {
   return from && isStatus(from) ? TRANSITIONS[from] : []
 }
 
-/** Statuses that mean money has been verifiably received. */
+/* ── Payment toggle ──────────────────────────────────────────────────── */
+/**
+ * Registration is free: the Razorpay flow is switched off rather than
+ * removed, so it can be brought back by setting PAYMENTS_ENABLED=true and
+ * restarting.
+ *
+ * Read at call time rather than captured once at import, so a restart (or a
+ * test) picks up the change without the module needing to be reloaded.
+ */
+export function paymentsEnabled(): boolean {
+  return String(process.env.PAYMENTS_ENABLED ?? '').toLowerCase() === 'true'
+}
+
+/** Statuses an application sits in while it is waiting to be paid for. */
+export const AWAITING_PAYMENT: AppStatus[] = [
+  S.PAYMENT_PENDING, S.PAYMENT_FAILED, S.PAYMENT_CANCELLED,
+]
+
+/**
+ * Where save-profile should leave a completed application. With payments off
+ * it goes straight to documents, so nobody waits on a step that no longer
+ * exists.
+ */
+export function statusAfterProfileSaved(): AppStatus {
+  return paymentsEnabled() ? S.PAYMENT_PENDING : S.DOCUMENTS_PENDING
+}
+
+/**
+ * Statuses that mean the application has cleared the payment gate — either
+ * because money was verifiably received, or because payments are switched
+ * off and statusAfterProfileSaved() sent it straight here.
+ */
 export const PAID_STATUSES: AppStatus[] = [
   S.PAYMENT_SUCCESSFUL, S.DOCUMENTS_PENDING, S.DOCUMENTS_SUBMITTED,
   S.DOCUMENTS_UNDER_REVIEW, S.DOCUMENTS_REJECTED, S.DOCUMENTS_VERIFIED,

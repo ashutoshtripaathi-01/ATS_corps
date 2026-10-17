@@ -12,6 +12,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { getAdminStats, getAdminMetrics } from '@/lib/api';
+import { usePaymentsEnabled } from '@/hooks/usePaymentsEnabled';
 
 interface Stats {
   totalCandidates: number;
@@ -38,6 +39,7 @@ const FORCE_COLOR: Record<string, string> = {
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const paymentsEnabled = usePaymentsEnabled();
   const [stats, setStats] = useState<Stats | null>(null);
   const [metrics, setMetrics] = useState<Record<string, number> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,11 +54,20 @@ export default function AdminDashboard() {
       .catch(console.error);
   }, []);
 
-  /* Lifecycle counts — every application is counted, not just the paid ones. */
+  /*
+   * Lifecycle counts — every application is counted, not just the paid ones.
+   * The two payment tiles are dropped while payments are off: after the
+   * free-registration migration nothing is ever Payment Pending, and
+   * Payment Successful would just silently duplicate Total Applications —
+   * neither reading is useful, and both would deep-link to a filter chip
+   * that no longer exists on the Applicants page.
+   */
   const pipeline = [
     { label: 'Total Applications', key: 'totalApplications',    filter: '',                   tone: 'text-gray-900' },
-    { label: 'Payment Pending',    key: 'paymentPending',       filter: 'payment_pending',    tone: 'text-amber-600' },
-    { label: 'Payment Successful', key: 'paymentSuccessful',    filter: 'payment_successful', tone: 'text-green-600' },
+    ...(paymentsEnabled ? [
+      { label: 'Payment Pending',    key: 'paymentPending',       filter: 'payment_pending',    tone: 'text-amber-600' },
+      { label: 'Payment Successful', key: 'paymentSuccessful',    filter: 'payment_successful', tone: 'text-green-600' },
+    ] : []),
     { label: 'Documents Pending',  key: 'documentsPending',     filter: 'documents_pending',  tone: 'text-amber-600' },
     { label: 'Under Review',       key: 'documentsUnderReview', filter: 'documents_review',   tone: 'text-indigo-600' },
     { label: 'Documents Verified', key: 'documentsVerified',    filter: 'documents_verified', tone: 'text-teal-600' },
@@ -154,10 +165,12 @@ export default function AdminDashboard() {
         className='bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden'>
         <div className='flex items-center justify-between px-4 py-3 border-b border-gray-50'>
           <p className='text-sm font-bold text-gray-900'>Application Pipeline</p>
-          {metrics && (metrics.registrationsToday > 0 || metrics.paymentsToday > 0 || metrics.pendingFollowUps > 0) && (
+          {metrics && (metrics.registrationsToday > 0 || (paymentsEnabled && metrics.paymentsToday > 0) || metrics.pendingFollowUps > 0) && (
             <div className='flex items-center gap-3 text-[11px]'>
               <span className='text-gray-500'>Today: <strong className='text-gray-900'>{metrics.registrationsToday}</strong> new</span>
-              <span className='text-gray-500'><strong className='text-green-600'>{metrics.paymentsToday}</strong> paid</span>
+              {paymentsEnabled && (
+                <span className='text-gray-500'><strong className='text-green-600'>{metrics.paymentsToday}</strong> paid</span>
+              )}
               {metrics.pendingFollowUps > 0 && (
                 <span className='font-bold text-red-600'>{metrics.pendingFollowUps} follow-ups due</span>
               )}

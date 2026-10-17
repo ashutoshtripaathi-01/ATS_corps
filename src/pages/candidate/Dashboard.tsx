@@ -24,8 +24,9 @@ import {
 import { useAppStore } from '@/store/useAppStore';
 import { getCandidateProfile } from '@/lib/api';
 import {
-  PROGRESS_STEPS, progressIndex, STATUS_LABEL, STATUS_CHIP, isPaid,
+  progressStepsFor, progressIndex, STATUS_LABEL, STATUS_CHIP, isPaid,
 } from '@/constants/applicationStatus';
+import { usePaymentsEnabled } from '@/hooks/usePaymentsEnabled';
 import companyLogo from '@/assets/company logo.png';
 
 interface CandidateProfile {
@@ -54,13 +55,14 @@ interface CandidateProfile {
 }
 
 /* ─── Application progress tracker ───────────────────────────────────────── */
-function ProgressTracker({ status }: { status: string | null }) {
-  const current = progressIndex(status);
+function ProgressTracker({ status, paymentsEnabled }: { status: string | null; paymentsEnabled: boolean }) {
+  const steps   = progressStepsFor(paymentsEnabled);
+  const current = progressIndex(status, steps);
   const held    = status === 'APPLICATION_ON_HOLD' || status === 'APPLICATION_CANCELLED';
 
   return (
     <ol className='space-y-2.5'>
-      {PROGRESS_STEPS.map((s, i) => {
+      {steps.map((s, i) => {
         const done    = i < current;
         const active  = i === current && !held;
         return (
@@ -116,6 +118,7 @@ const CardHead = ({ title, icon: Icon, action }: { title: string; icon?: React.E
 export default function CandidateDashboard() {
   const navigate = useNavigate();
   const { user } = useAppStore();
+  const paymentsEnabled = usePaymentsEnabled();
 
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -140,6 +143,21 @@ export default function CandidateDashboard() {
     : 0;
 
   const forceStyle = profile ? (FORCE_COLOR[profile.force] ?? FORCE_COLOR['Army']) : null;
+
+  /*
+   * Registration is free: payment_status stays 'pending' forever for every
+   * free application, since nothing ever calls payments/verify to flip it.
+   * Showing "Payment: Pending" would read as a stuck candidate doing
+   * something wrong. The first stat tile tracks submission instead whenever
+   * payments are off — the milestone that actually matters in the free flow.
+   */
+  const firstStatTile = paymentsEnabled
+    ? { label: 'Payment', value: profile?.payment_status === 'paid' ? 'Paid' : 'Pending',
+        ok: profile?.payment_status === 'paid' }
+    : { label: 'Submitted',
+        value: profile && !['REGISTERED', 'APPLICATION_STARTED'].includes(profile.application_status ?? '')
+          ? 'Yes' : 'Pending',
+        ok: !!profile && !['REGISTERED', 'APPLICATION_STARTED'].includes(profile.application_status ?? '') };
 
   return (
     <div className='min-h-screen bg-gray-50 dark:bg-[#13161a]'>
@@ -179,27 +197,33 @@ export default function CandidateDashboard() {
                         Your application has been saved.
                       </p>
                       <p className='text-xs text-amber-700 dark:text-amber-400/80 mt-1 leading-relaxed'>
-                        You can continue your application anytime by logging into your
-                        account. Amount payable: <strong>₹{profile.application_fee || 100}</strong>
+                        {paymentsEnabled
+                          ? <>You can continue your application anytime by logging into your
+                              account. Amount payable: <strong>₹{profile.application_fee || 100}</strong></>
+                          : 'You can continue your application anytime by logging into your account.'}
                       </p>
                     </div>
                     <button
-                      onClick={() => navigate('/candidate/payment', {
-                        state: {
-                          fullName:       profile.full_name,
-                          mobile:         profile.mobile,
-                          rank:           profile.rank,
-                          force:          profile.force,
-                          post:           profile.post,
-                          loc1:           profile.loc1,
-                          loc2:           profile.loc2 ?? undefined,
-                          loc3:           profile.loc3 ?? undefined,
-                          applicationFee: profile.application_fee,
-                          unit:           profile.unit,
-                          retirementDate: profile.retirement_date,
-                          registrationRef: profile.registration_ref,
-                        },
-                      })}
+                      onClick={() => paymentsEnabled
+                        ? navigate('/candidate/payment', {
+                            state: {
+                              fullName:       profile.full_name,
+                              mobile:         profile.mobile,
+                              rank:           profile.rank,
+                              force:          profile.force,
+                              post:           profile.post,
+                              loc1:           profile.loc1,
+                              loc2:           profile.loc2 ?? undefined,
+                              loc3:           profile.loc3 ?? undefined,
+                              applicationFee: profile.application_fee,
+                              unit:           profile.unit,
+                              retirementDate: profile.retirement_date,
+                              registrationRef: profile.registration_ref,
+                            },
+                          })
+                        // Free registration: nothing to pay for, so send them
+                        // back to finish and submit the application instead.
+                        : navigate('/candidate/register')}
                       className='w-full h-11 bg-[#F7A607] hover:bg-[#e09500] text-white text-sm font-bold
                         rounded-xl transition-colors flex items-center justify-center gap-2'
                     >
@@ -210,7 +234,9 @@ export default function CandidateDashboard() {
                   <>
                     <div className='bg-green-50 dark:bg-green-900/15 border border-green-100 dark:border-green-900/30 rounded-xl p-3.5 mb-4'>
                       <p className='text-xs font-bold text-green-900 dark:text-green-300'>
-                        Payment received — ₹{profile.application_fee}
+                        {paymentsEnabled
+                          ? `Payment received — ₹${profile.application_fee}`
+                          : 'Application submitted'}
                       </p>
                       <p className='text-xs text-green-700 dark:text-green-400/80 mt-1 leading-relaxed'>
                         {profile.application_status === 'COMPLETED'
@@ -240,7 +266,7 @@ export default function CandidateDashboard() {
               {/* Right: progress */}
               <div className='p-5 bg-gray-50/60 dark:bg-white/2'>
                 <p className='text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3'>Progress</p>
-                <ProgressTracker status={profile.application_status} />
+                <ProgressTracker status={profile.application_status} paymentsEnabled={paymentsEnabled} />
               </div>
             </div>
           </motion.div>
@@ -313,8 +339,7 @@ export default function CandidateDashboard() {
                     </div>
                     <div className='flex gap-3'>
                       {[
-                        { label: 'Payment',  value: profile.payment_status === 'paid' ? 'Paid' : 'Pending',
-                          ok: profile.payment_status === 'paid' },
+                        firstStatTile,
                         { label: 'Docs',     value: `${docCount}/3`,
                           ok: docCount === 3 },
                         { label: 'Verified', value: profile.verification_status === 'verified' ? 'Yes' : 'Pending',
@@ -343,7 +368,7 @@ export default function CandidateDashboard() {
             {profile && (
               <div className='flex gap-3 mt-5 lg:hidden'>
                 {[
-                  { label: 'Payment',  value: profile.payment_status === 'paid' ? 'Paid' : 'Pending', ok: profile.payment_status === 'paid' },
+                  firstStatTile,
                   { label: 'Docs',     value: `${docCount}/3`, ok: docCount === 3 },
                   { label: 'Verified', value: profile.verification_status === 'verified' ? 'Yes' : 'Pending', ok: profile.verification_status === 'verified' },
                 ].map(({ label, value, ok }) => (
@@ -443,12 +468,24 @@ export default function CandidateDashboard() {
             {/* ── Status row (mobile: 2 col, desktop: 4 col) ── */}
             <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
               {[
-                {
-                  label: 'Payment Status', icon: CheckCircle,
-                  value: profile.payment_status === 'paid' ? 'Paid' : 'Pending',
-                  sub: profile.payment_status === 'paid' ? `₹${profile.application_fee.toLocaleString()} received` : 'Action required',
-                  ok: profile.payment_status === 'paid', okColor: 'text-green-500', pendingColor: 'text-amber-500',
-                },
+                paymentsEnabled
+                  ? {
+                      label: 'Payment Status', icon: CheckCircle,
+                      value: profile.payment_status === 'paid' ? 'Paid' : 'Pending',
+                      sub: profile.payment_status === 'paid' ? `₹${profile.application_fee.toLocaleString()} received` : 'Action required',
+                      ok: profile.payment_status === 'paid', okColor: 'text-green-500', pendingColor: 'text-amber-500',
+                    }
+                  : {
+                      // Registration is free — payment_status never flips to 'paid'
+                      // for these applications, so tracking submission instead.
+                      label: 'Registration Status', icon: CheckCircle,
+                      value: ['REGISTERED', 'APPLICATION_STARTED'].includes(profile.application_status ?? '')
+                        ? 'In Progress' : 'Submitted',
+                      sub: ['REGISTERED', 'APPLICATION_STARTED'].includes(profile.application_status ?? '')
+                        ? 'Complete your details' : 'No fee required',
+                      ok: !['REGISTERED', 'APPLICATION_STARTED'].includes(profile.application_status ?? ''),
+                      okColor: 'text-green-500', pendingColor: 'text-amber-500',
+                    },
                 {
                   label: 'Verification', icon: Shield,
                   value: profile.verification_status === 'verified' ? 'Verified' : 'Under Review',
@@ -683,7 +720,9 @@ export default function CandidateDashboard() {
                   Complete Your Registration
                 </h3>
                 <p className='text-sm text-gray-500 dark:text-gray-400 max-w-sm mb-6'>
-                  Fill in your service details, upload documents, and pay the registration fee to get matched with verified employers.
+                  {paymentsEnabled
+                    ? 'Fill in your service details, upload documents, and pay the registration fee to get matched with verified employers.'
+                    : 'Fill in your service details and upload documents to get matched with verified employers — registration is free.'}
                 </p>
                 <button onClick={() => navigate('/candidate/register')}
                   className='flex items-center gap-2 px-6 py-3 bg-[#F7A607] hover:bg-[#e09500] text-white text-sm font-bold rounded-xl transition-colors'

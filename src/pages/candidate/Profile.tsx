@@ -5,6 +5,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { getCandidateProfile, getMyDocuments, type DocumentSlot } from '@/lib/api';
 import { DOC_META, DOC_STATUS_CHIP } from '@/constants/applicationStatus';
 import { SecureDocLink } from '@/components/shared/SecureDocLink';
+import { usePaymentsEnabled } from '@/hooks/usePaymentsEnabled';
 
 interface Candidate {
   id: number; full_name: string; mobile: string; force: string; rank: string;
@@ -30,6 +31,7 @@ function formatDate(iso: string) {
 
 export default function CandidateProfile() {
   const { user } = useAppStore();
+  const paymentsEnabled = usePaymentsEnabled();
   const [profile, setProfile] = useState<Candidate | null>(null);
   const [docs,    setDocs]    = useState<DocumentSlot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,9 +115,11 @@ export default function CandidateProfile() {
                     <VerifyIcon className="w-3 h-3" />
                     {profile.verification_status.charAt(0).toUpperCase() + profile.verification_status.slice(1)}
                   </span>
-                  <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full ${profile.payment_status === 'paid' ? 'bg-green-900/30 text-green-400' : 'bg-amber-900/30 text-amber-400'}`}>
-                    {profile.payment_status === 'paid' ? '✓ Paid' : 'Pending Payment'}
-                  </span>
+                  {paymentsEnabled && (
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full ${profile.payment_status === 'paid' ? 'bg-green-900/30 text-green-400' : 'bg-amber-900/30 text-amber-400'}`}>
+                      {profile.payment_status === 'paid' ? '✓ Paid' : 'Pending Payment'}
+                    </span>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t border-white/8 space-y-2">
@@ -142,7 +146,9 @@ export default function CandidateProfile() {
               <div className="p-4 space-y-2.5">
                 {docItems.length === 0 && (
                   <p className="text-xs text-gray-400 text-center py-3">
-                    Documents unlock after your registration payment.
+                    {paymentsEnabled
+                      ? 'Documents unlock after your registration payment.'
+                      : 'Documents unlock once your registration is submitted.'}
                   </p>
                 )}
                 {docItems.map((d) => {

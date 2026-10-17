@@ -12,6 +12,7 @@ import { toast } from '@/hooks/useToast';
 import { BRAND } from '@/constants';
 import { saveProfile, updateDraft, getCandidateProfile } from '@/lib/api';
 import { isPaid } from '@/constants/applicationStatus';
+import { usePaymentsEnabled } from '@/hooks/usePaymentsEnabled';
 import companyLogo from '@/assets/company logo.png';
 
 /* ─── Data ───────────────────────────────────────────────────────────────── */
@@ -38,13 +39,17 @@ const LOCATIONS = ['Upper Assam', 'Guwahati & Around', 'Lower Assam'] as const;
 const REGISTRATION_FEE = 5000;
 
 /* ─── Step metadata ───────────────────────────────────────────────────────── */
-/* Documents are no longer collected here — they unlock after payment and are
-   uploaded from /candidate/documents.                                        */
-const STEPS = [
-  { label: 'Personal & Service', shortLabel: 'Personal',    desc: 'Force, rank & personal details' },
-  { label: 'Job Preferences',    shortLabel: 'Preferences', desc: 'Preferred roles & locations' },
-  { label: 'Review & Payment',   shortLabel: 'Review',      desc: 'Review your details & complete registration' },
-];
+/* Documents are no longer collected here — they unlock once the application
+   is submitted and are uploaded from /candidate/documents.                   */
+function stepsFor(paymentsEnabled: boolean) {
+  return [
+    { label: 'Personal & Service', shortLabel: 'Personal',    desc: 'Force, rank & personal details' },
+    { label: 'Job Preferences',    shortLabel: 'Preferences', desc: 'Preferred roles & locations' },
+    paymentsEnabled
+      ? { label: 'Review & Payment', shortLabel: 'Review', desc: 'Review your details & complete registration' }
+      : { label: 'Review & Submit',  shortLabel: 'Review', desc: 'Review your details & submit your application' },
+  ];
+}
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface FormState {
@@ -309,11 +314,12 @@ function PersonalServiceStep({
    STEP 2 — Job Preferences
 ══════════════════════════════════════════════════════════════════════════ */
 function JobPreferencesStep({
-  data, update, errors,
+  data, update, errors, paymentsEnabled,
 }: {
   data: FormState;
   update: (k: keyof FormState, v: any) => void;
   errors: Partial<Record<keyof FormState, string>>;
+  paymentsEnabled: boolean;
 }) {
   const locOptions = (excluding: string[]) =>
     (LOCATIONS as unknown as string[]).filter((l) => !excluding.includes(l));
@@ -413,14 +419,22 @@ function JobPreferencesStep({
           })}
 
           {data.loc1 && (
-            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-              className='flex items-center justify-between p-3.5 bg-amber-50 border border-amber-100 rounded-xl mt-2'>
-              <div>
-                <p className='text-xs font-semibold text-gray-700'>Registration Fee</p>
-                <p className='text-[11px] text-gray-500 mt-0.5'>One-time · non-refundable</p>
-              </div>
-              <p className='text-xl font-extrabold text-[#F7A607]'>₹{REGISTRATION_FEE.toLocaleString()}</p>
-            </motion.div>
+            paymentsEnabled ? (
+              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                className='flex items-center justify-between p-3.5 bg-amber-50 border border-amber-100 rounded-xl mt-2'>
+                <div>
+                  <p className='text-xs font-semibold text-gray-700'>Registration Fee</p>
+                  <p className='text-[11px] text-gray-500 mt-0.5'>One-time · non-refundable</p>
+                </div>
+                <p className='text-xl font-extrabold text-[#F7A607]'>₹{REGISTRATION_FEE.toLocaleString()}</p>
+              </motion.div>
+            ) : (
+              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                className='flex items-center gap-2.5 p-3.5 bg-green-50 border border-green-100 rounded-xl mt-2'>
+                <CheckCircle className='w-4 h-4 text-green-600 shrink-0' />
+                <p className='text-xs font-semibold text-green-800'>Registration is completely free — no payment required.</p>
+              </motion.div>
+            )
           )}
         </div>
       </div>
@@ -432,13 +446,14 @@ function JobPreferencesStep({
    STEP 3 — Review & Payment
 ══════════════════════════════════════════════════════════════════════════ */
 function ReviewPaymentStep({
-  data, onProceed, onEdit, onGoBack, saving,
+  data, onProceed, onEdit, onGoBack, saving, paymentsEnabled,
 }: {
   data: FormState;
   onProceed: () => void;
   onEdit: (step: number) => void;
   onGoBack: () => void;
   saving?: boolean;
+  paymentsEnabled: boolean;
 }) {
   const fee = REGISTRATION_FEE;
 
@@ -466,7 +481,9 @@ function ReviewPaymentStep({
           Review your registration
         </h2>
         <p className='text-sm text-gray-500 mt-1'>
-          Please confirm your details below before completing payment.
+          {paymentsEnabled
+            ? 'Please confirm your details below before completing payment.'
+            : 'Please confirm your details below before submitting your application.'}
         </p>
       </div>
 
@@ -488,43 +505,57 @@ function ReviewPaymentStep({
         {data.loc3 && <ReviewRow label='3rd Priority' value={data.loc3} />}
       </ReviewSection>
 
-      {/* Documents come after payment — set expectations here */}
+      {/* Documents come next — set expectations here */}
       <div className='flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-2xl p-4'>
         <FileText className='w-4 h-4 text-blue-600 shrink-0 mt-0.5' />
         <div>
           <p className='text-xs font-bold text-blue-900'>Documents come next</p>
           <p className='text-xs text-blue-700 mt-0.5 leading-relaxed'>
-            After payment you'll be asked to upload your Aadhaar, PAN, photograph
-            and service certificate for verification.
+            {paymentsEnabled
+              ? "After payment you'll be asked to upload your Aadhaar, PAN, photograph and service certificate for verification."
+              : "Right after you submit, you'll be asked to upload your Aadhaar, PAN, photograph and service certificate for verification."}
           </p>
         </div>
       </div>
 
-      {/* Registration Fee */}
-      <div className='bg-white border border-gray-100 rounded-2xl p-5 shadow-sm'>
-        <div className='flex items-center justify-between'>
-          <div>
-            <p className='text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1'>Registration Fee</p>
-            <p className='text-sm font-semibold text-gray-800'>One-time · covers all preferred locations</p>
-            <p className='text-xs text-gray-400 mt-1'>Non-refundable · Secured by Razorpay</p>
+      {paymentsEnabled ? (
+        <div className='bg-white border border-gray-100 rounded-2xl p-5 shadow-sm'>
+          <div className='flex items-center justify-between'>
+            <div>
+              <p className='text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1'>Registration Fee</p>
+              <p className='text-sm font-semibold text-gray-800'>One-time · covers all preferred locations</p>
+              <p className='text-xs text-gray-400 mt-1'>Non-refundable · Secured by Razorpay</p>
+            </div>
+            <p className='text-4xl font-black text-[#F7A607]'>₹{fee}</p>
           </div>
-          <p className='text-4xl font-black text-[#F7A607]'>₹{fee}</p>
         </div>
-      </div>
+      ) : (
+        <div className='flex items-center gap-3 bg-green-50 border border-green-100 rounded-2xl p-4'>
+          <CheckCircle className='w-5 h-5 text-green-600 shrink-0' />
+          <div>
+            <p className='text-sm font-bold text-green-900'>No registration fee</p>
+            <p className='text-xs text-green-700 mt-0.5'>Registration is completely free — nothing to pay.</p>
+          </div>
+        </div>
+      )}
 
       {/* CTA */}
       <Button size='lg' className='w-full rounded-xl text-sm font-bold gap-2.5 h-13'
         onClick={onProceed} disabled={saving}>
         {saving ? (
           <><div className='w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin' />Saving…</>
-        ) : (
+        ) : paymentsEnabled ? (
           <><CreditCard className='w-4 h-4' />Confirm Details & Pay ₹{fee}</>
+        ) : (
+          <><CheckCircle className='w-4 h-4' />Submit Application</>
         )}
       </Button>
 
-      <p className='text-center text-xs text-gray-400 leading-relaxed'>
-        Secure payment powered by Razorpay · 256-bit SSL encryption
-      </p>
+      {paymentsEnabled && (
+        <p className='text-center text-xs text-gray-400 leading-relaxed'>
+          Secure payment powered by Razorpay · 256-bit SSL encryption
+        </p>
+      )}
     </div>
   );
 }
@@ -535,6 +566,8 @@ function ReviewPaymentStep({
 export default function CandidateRegister() {
   const navigate = useNavigate();
   const { user } = useAppStore();
+  const paymentsEnabled = usePaymentsEnabled();
+  const STEPS = stepsFor(paymentsEnabled);
 
   const [step,           setStep]           = useState(1);
   const [data,           setData]           = useState<FormState>(INITIAL);
@@ -692,8 +725,9 @@ export default function CandidateRegister() {
   const handleProceed = async () => {
     setSaving(true);
     try {
-      // The application is persisted here — before any payment is attempted —
-      // so it survives a cancelled or failed checkout.
+      // The application is persisted here — before any payment would be
+      // attempted — so it survives a cancelled or failed checkout on the rare
+      // chance payments get switched back on later.
       const saved = await saveProfile({
         mobile:         data.mobile,
         force:          data.force,
@@ -707,8 +741,17 @@ export default function CandidateRegister() {
         loc1:           data.loc1,
         loc2:           data.loc2,
         loc3:           data.loc3,
-        applicationFee: REGISTRATION_FEE,
+        applicationFee: paymentsEnabled ? REGISTRATION_FEE : 0,
       });
+
+      if (!paymentsEnabled) {
+        // Registration is free — the server already moved this application
+        // straight to DOCUMENTS_PENDING, so there is nothing to pay and
+        // nothing to navigate through. Go straight to document upload.
+        toast({ title: 'Application submitted', description: 'You can now upload your documents.' });
+        navigate('/candidate/documents', { replace: true });
+        return;
+      }
 
       navigate('/candidate/payment', {
         state: {
@@ -885,7 +928,7 @@ export default function CandidateRegister() {
               </div>
               {/* Desktop step info */}
               <div className='hidden lg:flex items-center gap-2'>
-                <span className='text-xs font-bold text-[#F7A607] uppercase tracking-wider'>Step {step} of 4</span>
+                <span className='text-xs font-bold text-[#F7A607] uppercase tracking-wider'>Step {step} of {STEPS.length}</span>
                 <span className='text-gray-300'>·</span>
                 <span className='text-sm font-semibold text-gray-700'>{STEPS[step - 1].label}</span>
                 <span className='hidden xl:inline text-xs text-gray-400'>— {STEPS[step - 1].desc}</span>
@@ -895,13 +938,13 @@ export default function CandidateRegister() {
             {/* Save status indicator */}
             <SaveStatusLabel />
 
-            <span className='text-xs font-semibold text-[#F7A607] shrink-0 ml-1'>{step}/4</span>
+            <span className='text-xs font-semibold text-[#F7A607] shrink-0 ml-1'>{step}/{STEPS.length}</span>
           </div>
 
           {/* Progress bar */}
           <div className='h-0.5 bg-gray-100'>
             <motion.div className='h-full bg-[#F7A607]'
-              animate={{ width: `${(step / 4) * 100}%` }}
+              animate={{ width: `${(step / STEPS.length) * 100}%` }}
               transition={{ duration: 0.35, ease: 'easeInOut' }} />
           </div>
 
@@ -936,13 +979,14 @@ export default function CandidateRegister() {
                 initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2 }}>
                 {step === 1 && <PersonalServiceStep data={data} update={update} errors={errors} />}
-                {step === 2 && <JobPreferencesStep data={data} update={update} errors={errors} />}
+                {step === 2 && <JobPreferencesStep data={data} update={update} errors={errors} paymentsEnabled={paymentsEnabled} />}
                 {step === 3 && (
                   <ReviewPaymentStep
                     data={data}
                     saving={saving} onProceed={handleProceed}
                     onEdit={handleEditSection}
                     onGoBack={() => { setReturnToReview(false); setStep(2); window.scrollTo(0, 0); }}
+                    paymentsEnabled={paymentsEnabled}
                   />
                 )}
               </motion.div>

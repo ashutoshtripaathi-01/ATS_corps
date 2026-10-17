@@ -25,6 +25,7 @@ import { Navbar } from '@/components/shared/Navbar';
 import { RoleSelectModal } from '@/components/shared/RoleSelectModal';
 import { AnimatedCounter } from '@/components/shared/AnimatedCounter';
 import { BRAND } from '@/constants';
+import { usePaymentsEnabled } from '@/hooks/usePaymentsEnabled';
 import heroImage from '@/assets/cover.png';
 import heroBg from '@/assets/cover 1.png';
 import companyLogo from '@/assets/company logo.png';
@@ -284,44 +285,38 @@ const WHO_WE_SERVE = [
   },
 ];
 
-const HOW_CANDIDATE = [
-  {
-    n: '01',
-    title: 'Register Profile',
-    desc: 'Submit your details, skills, and workforce experience.',
-  },
-  {
-    n: '02',
-    title: 'Submit Documents',
-    desc: 'Upload service records, identity proof, and certificates.',
-  },
-  {
-    n: '03',
-    title: 'Verification Process',
-    desc: 'Ex-Serviceman Jobs verifies your documents and background.',
-  },
-  {
-    n: '04',
-    title: 'Pay Placement Fee',
-    desc: 'One-time location-based fee to activate employer matching.',
-  },
-  {
-    n: '05',
-    title: 'Employer Matching',
-    desc: 'We match your profile to verified employer requirements.',
-  },
-  {
-    n: '06',
-    title: 'Placement Support',
-    desc: 'Ex-Serviceman Jobs supports you through interview and final hiring.',
-  },
-];
+/**
+ * "How it works" steps shown on the public landing page.
+ *
+ * Registration is currently free, so the fee step is dropped rather than
+ * left in place describing a charge that will not actually happen — this is
+ * the first thing a prospective candidate or employer reads about the
+ * process. Numbering is generated from array position instead of hardcoded,
+ * so dropping a step never leaves a gap (04 vanishing, 05/06 unchanged) to
+ * fix by hand.
+ */
+function numbered<T extends { title: string; desc: string }>(steps: T[]) {
+  return steps.map((s, i) => ({ ...s, n: String(i + 1).padStart(2, '0') }));
+}
+
+function howCandidateFor(paymentsEnabled: boolean) {
+  return numbered([
+    { title: 'Register Profile',   desc: 'Submit your details, skills, and workforce experience.' },
+    { title: 'Submit Documents',   desc: 'Upload service records, identity proof, and certificates.' },
+    { title: 'Verification Process', desc: 'Ex-Serviceman Jobs verifies your documents and background.' },
+    ...(paymentsEnabled
+      ? [{ title: 'Pay Placement Fee', desc: 'One-time location-based fee to activate employer matching.' }]
+      : []),
+    { title: 'Employer Matching',  desc: 'We match your profile to verified employer requirements.' },
+    { title: 'Placement Support',  desc: 'Ex-Serviceman Jobs supports you through interview and final hiring.' },
+  ]);
+}
 
 const HOW_EMPLOYER = [
   {
     n: '01',
     title: 'Register Organization',
-    desc: 'List your company and pay the portal registration fee.',
+    desc: 'List your company and get started.',
   },
   {
     n: '02',
@@ -429,6 +424,8 @@ const FORCE_CHIP: Record<string, string> = {
 /* ─── Page ───────────────────────────────────────────────────────────────── */
 
 export default function Landing() {
+  const paymentsEnabled = usePaymentsEnabled();
+  const HOW_CANDIDATE = howCandidateFor(paymentsEnabled);
   const [modalOpen, setModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
 

@@ -8,12 +8,27 @@ import { signAccessToken, issueRefreshToken } from '../lib/tokens'
 import { body } from '../lib/validate'
 import { audit, A } from '../lib/audit'
 import { logActivity, setApplicationStatus, touchActivity, E } from '../lib/activity'
-import { S, PAID_STATUSES } from '../lib/applicationStatus'
+import { S, PAID_STATUSES, paymentsEnabled } from '../lib/applicationStatus'
 
 const router = Router()
 
-// ₹5,000 registration fee (500000 paise)
+// ₹5,000 registration fee (500000 paise) — only charged while payments are on
 const REGISTRATION_FEE_PAISE = 500000
+
+/*
+ * Registration is currently free. Rather than deleting the Razorpay
+ * integration, every route in this file is gated behind one flag so it can
+ * be brought back later by setting PAYMENTS_ENABLED=true and restarting —
+ * no code changes, no redeploy of logic that already works and is tested.
+ */
+router.use((_req: Request, res: Response, next) => {
+  if (!paymentsEnabled()) {
+    return res.status(503).json({
+      error: 'Registration is currently free — payment is not required.',
+    })
+  }
+  next()
+})
 
 /* ── POST /api/payments/create-order ────────────────────────────────── */
 router.post('/create-order', requireAuth('candidate'), async (req: Request, res: Response) => {

@@ -1,5 +1,6 @@
 import { Pool, types } from 'pg'
 import dotenv from 'dotenv'
+import { paymentsEnabled } from './lib/applicationStatus'
 dotenv.config()
 
 // Return DATE columns as plain 'YYYY-MM-DD' strings. By default pg builds a
@@ -347,6 +348,32 @@ export async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_audit_action       ON audit_logs(action);
       CREATE INDEX IF NOT EXISTS idx_audit_created      ON audit_logs(created_at DESC);
     `)
+
+    /*
+     * Phase 7 migration — registration made free.
+     *
+     * Any application still waiting on a payment it will now never be asked
+     * for is moved straight to DOCUMENTS_PENDING, so it shows correctly in
+     * the admin list and the candidate can upload immediately rather than
+     * being stuck behind a step that no longer applies.
+     *
+     * Gated on the PAYMENTS_ENABLED flag rather than running unconditionally:
+     * if payments are ever switched back on, a freshly created PAYMENT_PENDING
+     * row must stay PAYMENT_PENDING, not be swept into DOCUMENTS_PENDING by
+     * this migration on the next restart. The WHERE clause makes the whole
+     * statement a no-op whenever payments are enabled, and running it again
+     * once the backlog is cleared is harmless — there is nothing left to move.
+     */
+    await client.query(
+      `UPDATE candidates
+          SET application_status = 'DOCUMENTS_PENDING',
+              last_activity_at   = NOW(),
+              updated_at         = NOW()
+        WHERE $1 = false
+          AND application_status IN ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')`,
+      [paymentsEnabled()],
+    )
+
     console.log('✅ DB tables ready')
   } finally {
     client.release()

@@ -19,6 +19,10 @@ const schema = z
     // Public OAuth client id. Not a secret — the browser ships it too.
     // Its only job here is to be the audience we verify Google tokens against.
     GOOGLE_CLIENT_ID:     z.string().optional(),
+
+    // Registration is currently free. Set to "true" to bring the Razorpay
+    // flow back; every payment surface keys off this one value.
+    PAYMENTS_ENABLED:     z.string().optional(),
     // Razorpay — required for live payments, optional when DEV_BYPASS=true
     RAZORPAY_KEY_ID:     z.string().optional(),
     RAZORPAY_KEY_SECRET: z.string().optional(),

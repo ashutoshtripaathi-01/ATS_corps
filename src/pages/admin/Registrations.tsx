@@ -13,10 +13,11 @@ import {
   type AdminNoteRecord, type ActivityEventRecord, type OfficeVisitRecord,
 } from '@/lib/api';
 import {
-  STATUS_LABEL, STATUS_CHIP, ADMIN_FILTERS, CALL_STATUS_OPTIONS,
-  DOC_META, DOC_STATUS_CHIP,
+  STATUS_LABEL, STATUS_CHIP, adminFiltersFor, CALL_STATUS_OPTIONS,
+  DOC_META, DOC_STATUS_CHIP, isPaid,
 } from '@/constants/applicationStatus';
 import { SecureDocLink } from '@/components/shared/SecureDocLink';
+import { usePaymentsEnabled } from '@/hooks/usePaymentsEnabled';
 import { toast } from '@/hooks/useToast';
 
 const FORCE_COLOR: Record<string, string> = {
@@ -161,7 +162,7 @@ function DetailDrawer({ id, onClose, onChanged }: {
         {/* Body */}
         <div className='flex-1 overflow-y-auto p-5'>
           {tab === 'details'   && <DetailsTab a={a} payments={data.payments} />}
-          {tab === 'documents' && <DocumentsTab docs={data.documents} onReviewed={refresh} paid={data.payments.some((p) => p.status === 'paid')} />}
+          {tab === 'documents' && <DocumentsTab docs={data.documents} onReviewed={refresh} unlocked={isPaid(a.application_status)} />}
           {tab === 'calls'     && <CallsTab id={id} calls={data.calls} onAdded={refresh} />}
           {tab === 'notes'     && <NotesTab id={id} notes={data.notes} onAdded={refresh} />}
           {tab === 'timeline'  && <TimelineTab events={data.timeline} />}
@@ -184,6 +185,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function DetailsTab({ a, payments }: { a: ApplicantRecord; payments: PaymentRecord[] }) {
+  const paymentsEnabled = usePaymentsEnabled();
   const paid = payments.find((p) => p.status === 'paid');
   return (
     <div className='space-y-5'>
@@ -205,32 +207,36 @@ function DetailsTab({ a, payments }: { a: ApplicantRecord; payments: PaymentReco
         <Row label='Assigned Admin'  value={a.assigned_admin} />
       </section>
 
-      <section>
-        <p className='text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1'>Payment</p>
-        <Row label='Fee' value={`₹${a.application_fee ?? 0}`} />
-        <Row label='Status' value={
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full
-            ${paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-            {paid ? 'Paid' : 'Pending'}
-          </span>
-        } />
-        {paid && <>
-          <Row label='Order ID'   value={paid.razorpay_order_id} />
-          <Row label='Payment ID' value={paid.razorpay_payment_id} />
-          <Row label='Paid At'    value={paid.paid_at ? fmtDateTime(paid.paid_at) : null} />
-        </>}
-        {!paid && payments.length > 0 && (
-          <p className='text-xs text-gray-500 mt-2'>
-            {payments.length} payment attempt{payments.length > 1 ? 's' : ''} — none completed.
-          </p>
-        )}
-      </section>
+      {/* Payment is currently free — this section would otherwise show a
+          misleading "Fee: ₹0 · Pending" for every applicant. */}
+      {paymentsEnabled && (
+        <section>
+          <p className='text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1'>Payment</p>
+          <Row label='Fee' value={`₹${a.application_fee ?? 0}`} />
+          <Row label='Status' value={
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full
+              ${paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+              {paid ? 'Paid' : 'Pending'}
+            </span>
+          } />
+          {paid && <>
+            <Row label='Order ID'   value={paid.razorpay_order_id} />
+            <Row label='Payment ID' value={paid.razorpay_payment_id} />
+            <Row label='Paid At'    value={paid.paid_at ? fmtDateTime(paid.paid_at) : null} />
+          </>}
+          {!paid && payments.length > 0 && (
+            <p className='text-xs text-gray-500 mt-2'>
+              {payments.length} payment attempt{payments.length > 1 ? 's' : ''} — none completed.
+            </p>
+          )}
+        </section>
+      )}
     </div>
   );
 }
 
-function DocumentsTab({ docs, onReviewed, paid }: {
-  docs: DocumentRecord[]; onReviewed: () => void; paid: boolean;
+function DocumentsTab({ docs, onReviewed, unlocked }: {
+  docs: DocumentRecord[]; onReviewed: () => void; unlocked: boolean;
 }) {
   const [busyId, setBusyId] = useState<number | null>(null);
 
@@ -240,8 +246,8 @@ function DocumentsTab({ docs, onReviewed, paid }: {
         <FileText className='w-8 h-8 text-gray-300 mx-auto mb-2' />
         <p className='text-sm font-semibold text-gray-500'>No documents uploaded</p>
         <p className='text-xs text-gray-400 mt-1'>
-          {paid ? 'The applicant has not uploaded anything yet.'
-                : 'Documents are not available until payment is complete.'}
+          {unlocked ? 'The applicant has not uploaded anything yet.'
+                     : 'Documents are not available until the application reaches the documents stage.'}
         </p>
       </div>
     );
@@ -507,6 +513,9 @@ function VisitTab({ id, visits, onAdded }: { id: number; visits: OfficeVisitReco
    PAGE
 ══════════════════════════════════════════════════════════════════════════ */
 export default function AdminRegistrations() {
+  const paymentsEnabled = usePaymentsEnabled();
+  const FILTERS = adminFiltersFor(paymentsEnabled);
+
   // Dashboard tiles deep-link into a pre-selected filter.
   const [filter,  setFilter]  = useState(
     () => new URLSearchParams(window.location.search).get('filter') ?? '',
@@ -548,14 +557,16 @@ export default function AdminRegistrations() {
             <p className='text-xs text-gray-400 mb-0.5'>Admin</p>
             <h1 className='text-lg font-extrabold' style={{ fontFamily: 'Plus Jakarta Sans' }}>Applicants</h1>
             <p className='text-xs text-gray-400 mt-1'>
-              Every application — paid or not. Call unpaid applicants and follow them through to completion.
+              {paymentsEnabled
+                ? 'Every application — paid or not. Call unpaid applicants and follow them through to completion.'
+                : 'Every application. Follow each one through to completion.'}
             </p>
           </div>
           {data && (
             <div className='text-right shrink-0'>
               <p className='text-2xl font-extrabold text-[#F7A607]'>{data.total}</p>
               <p className='text-xs text-gray-400 mt-0.5'>
-                {ADMIN_FILTERS.find((f) => f.key === filter)?.label ?? 'Total'}
+                {FILTERS.find((f) => f.key === filter)?.label ?? 'Total'}
               </p>
             </div>
           )}
@@ -564,7 +575,7 @@ export default function AdminRegistrations() {
 
       {/* Filters */}
       <div className='flex gap-1.5 overflow-x-auto pb-1'>
-        {ADMIN_FILTERS.map(({ key, label }) => (
+        {FILTERS.map(({ key, label }) => (
           <button key={key} onClick={() => { setFilter(key); setPage(1) }}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all shrink-0
               ${filter === key ? 'bg-[#1a1d1f] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
@@ -608,8 +619,11 @@ export default function AdminRegistrations() {
           </div>
         ) : (
           <>
-            <div className='hidden lg:grid grid-cols-[2fr_1.2fr_1.3fr_1fr_0.8fr_1fr] gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100'>
-              {['Applicant', 'Application ID', 'Status', 'Documents', 'Fee', 'Last Activity'].map((h) => (
+            <div className={`hidden lg:grid ${paymentsEnabled ? 'lg:grid-cols-[2fr_1.2fr_1.3fr_1fr_0.8fr_1fr]' : 'lg:grid-cols-[2fr_1.2fr_1.3fr_1fr_1fr]'} gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100`}>
+              {(paymentsEnabled
+                ? ['Applicant', 'Application ID', 'Status', 'Documents', 'Fee', 'Last Activity']
+                : ['Applicant', 'Application ID', 'Status', 'Documents', 'Last Activity']
+              ).map((h) => (
                 <p key={h} className='text-[10px] font-bold text-gray-500 uppercase tracking-wider'>{h}</p>
               ))}
             </div>
@@ -617,8 +631,8 @@ export default function AdminRegistrations() {
             <div className='divide-y divide-gray-50'>
               {data.applicants.map((r) => (
                 <div key={r.id} onClick={() => setOpenId(r.id)}
-                  className='grid grid-cols-1 lg:grid-cols-[2fr_1.2fr_1.3fr_1fr_0.8fr_1fr] gap-2 lg:gap-3 px-4 py-3.5
-                    hover:bg-gray-50 transition-colors cursor-pointer'>
+                  className={`grid grid-cols-1 ${paymentsEnabled ? 'lg:grid-cols-[2fr_1.2fr_1.3fr_1fr_0.8fr_1fr]' : 'lg:grid-cols-[2fr_1.2fr_1.3fr_1fr_1fr]'} gap-2 lg:gap-3 px-4 py-3.5
+                    hover:bg-gray-50 transition-colors cursor-pointer`}>
 
                   {/* Applicant */}
                   <div className='flex items-center gap-3 min-w-0'>
@@ -674,9 +688,11 @@ export default function AdminRegistrations() {
                   </div>
 
                   {/* Fee */}
-                  <div className='flex items-center'>
-                    <p className='text-sm font-bold text-gray-900'>₹{r.application_fee || 0}</p>
-                  </div>
+                  {paymentsEnabled && (
+                    <div className='flex items-center'>
+                      <p className='text-sm font-bold text-gray-900'>₹{r.application_fee || 0}</p>
+                    </div>
+                  )}
 
                   {/* Last activity */}
                   <div className='flex items-center'>

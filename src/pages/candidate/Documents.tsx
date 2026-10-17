@@ -10,6 +10,7 @@ import {
 } from '@/lib/api'
 import { DOC_META, DOC_STATUS_CHIP, STATUS_LABEL } from '@/constants/applicationStatus'
 import { SecureDocLink } from '@/components/shared/SecureDocLink'
+import { usePaymentsEnabled } from '@/hooks/usePaymentsEnabled'
 import { toast } from '@/hooks/useToast'
 
 const STATUS_ICON: Record<string, React.ElementType> = {
@@ -130,6 +131,7 @@ function DocRow({
 
 export default function CandidateDocuments() {
   const navigate = useNavigate()
+  const paymentsEnabled = usePaymentsEnabled()
   const [loading, setLoading]   = useState(true)
   const [unlocked, setUnlocked] = useState(false)
   const [status, setStatus]     = useState<string | null>(null)
@@ -170,8 +172,9 @@ export default function CandidateDocuments() {
             Documents are locked
           </h1>
           <p className='text-sm text-gray-500 leading-relaxed mb-5'>
-            Your application is saved. Document upload opens as soon as your
-            registration payment is confirmed.
+            {paymentsEnabled
+              ? 'Your application is saved. Document upload opens as soon as your registration payment is confirmed.'
+              : 'Your application is saved. Document upload opens as soon as your registration is submitted.'}
           </p>
           {status && (
             <p className='text-xs text-gray-400 mb-5'>

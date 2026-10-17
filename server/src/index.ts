@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
 import dotenv from 'dotenv'
 import { validateEnv } from './lib/env'
+import { paymentsEnabled } from './lib/applicationStatus'
 import { initDb, dbTarget } from './db'
 import { startTokenCleanupJob } from './jobs/tokenCleanup'
 import authRoutes from './routes/auth'
@@ -166,7 +167,10 @@ app.get('/api/config', (_req, res) => {
   res.set('Cache-Control', 'public, max-age=300')
   res.json({
     googleClientId: process.env.GOOGLE_CLIENT_ID || null,
-    razorpayKeyId:  process.env.RAZORPAY_KEY_ID  || null,
+    // Withheld while registration is free, even though the key id itself is
+    // not secret — there is no reason to hand it out for a flow that is off.
+    razorpayKeyId:  paymentsEnabled() ? (process.env.RAZORPAY_KEY_ID || null) : null,
+    paymentsEnabled: paymentsEnabled(),
   })
 })
 

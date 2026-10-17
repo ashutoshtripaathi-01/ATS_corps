@@ -63,17 +63,41 @@ export const STATUS_CHIP: Record<string, string> = {
   APPLICATION_CANCELLED:  'bg-gray-200 text-gray-600',
 }
 
-/** The seven milestones shown on the candidate dashboard progress tracker. */
-export const PROGRESS_STEPS = [
-  { key: 'account',   label: 'Account Created',  matches: ['REGISTERED'] },
-  { key: 'started',   label: 'Application Started', matches: ['APPLICATION_STARTED'] },
-  { key: 'details',   label: 'Application Details', matches: ['PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED'] },
-  { key: 'payment',   label: 'Payment',          matches: ['PAYMENT_SUCCESSFUL'] },
-  { key: 'documents', label: 'Documents',        matches: ['DOCUMENTS_PENDING', 'DOCUMENTS_SUBMITTED', 'DOCUMENTS_REJECTED'] },
-  { key: 'verify',    label: 'Verification',     matches: ['DOCUMENTS_UNDER_REVIEW', 'DOCUMENTS_VERIFIED'] },
-  { key: 'visit',     label: 'Office Visit',     matches: ['OFFICE_VISIT_PENDING', 'PHYSICAL_VERIFICATION'] },
-  { key: 'done',      label: 'Completed',        matches: ['COMPLETED'] },
-] as const
+/**
+ * Milestones shown on the candidate dashboard progress tracker.
+ *
+ * Kept as a function of paymentsEnabled rather than one fixed array: a free
+ * application never visits PAYMENT_PENDING or PAYMENT_SUCCESSFUL at all, so
+ * a "Payment" step would sit there permanently un-checked (or worse, show as
+ * silently completed, since DOCUMENTS_PENDING outranks it in ORDER below).
+ * Dropping the step while payments are off is the only version of this list
+ * that is never misleading. PROGRESS_STEPS stays exported as the
+ * payments-on shape, for anything that still wants the full checklist.
+ */
+export function progressStepsFor(paymentsEnabled: boolean) {
+  return [
+    { key: 'account',   label: 'Account Created',     matches: ['REGISTERED'] },
+    { key: 'started',   label: 'Application Started', matches: ['APPLICATION_STARTED'] },
+    ...(paymentsEnabled
+      ? [
+          { key: 'details', label: 'Application Details', matches: ['PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED'] },
+          { key: 'payment', label: 'Payment',              matches: ['PAYMENT_SUCCESSFUL'] },
+        ]
+      : [
+          // The free path never produces PAYMENT_* statuses, but a row
+          // migrated before the toggle flipped — or left over if it flips
+          // back — can still carry one, so it is still matched here.
+          { key: 'details', label: 'Application Submitted', matches: ['PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED'] },
+        ]),
+    { key: 'documents', label: 'Documents',        matches: ['DOCUMENTS_PENDING', 'DOCUMENTS_SUBMITTED', 'DOCUMENTS_REJECTED'] },
+    { key: 'verify',    label: 'Verification',     matches: ['DOCUMENTS_UNDER_REVIEW', 'DOCUMENTS_VERIFIED'] },
+    { key: 'visit',     label: 'Office Visit',     matches: ['OFFICE_VISIT_PENDING', 'PHYSICAL_VERIFICATION'] },
+    { key: 'done',      label: 'Completed',        matches: ['COMPLETED'] },
+  ]
+}
+
+/** The full payments-on checklist — kept for any caller not yet migrated to progressStepsFor(). */
+export const PROGRESS_STEPS = progressStepsFor(true)
 
 /** Index of the milestone a status sits at — drives done/current/upcoming. */
 const ORDER: string[] = [
@@ -86,9 +110,12 @@ const ORDER: string[] = [
   'COMPLETED',
 ]
 
-export function progressIndex(status: string | null | undefined): number {
+export function progressIndex(
+  status: string | null | undefined,
+  steps: ReturnType<typeof progressStepsFor> = PROGRESS_STEPS,
+): number {
   if (!status) return 0
-  const i = PROGRESS_STEPS.findIndex((s) => (s.matches as readonly string[]).includes(status))
+  const i = steps.findIndex((s) => (s.matches as readonly string[]).includes(status))
   if (i >= 0) return i
   // On-hold / cancelled keep whatever progress they had — show nothing extra.
   return 0
@@ -136,12 +163,15 @@ export const CALL_STATUS_OPTIONS = [
   { value: 'CONVERTED',          label: 'Converted' },
 ] as const
 
-export const ADMIN_FILTERS = [
-  { key: '',                    label: 'All' },
-  { key: 'new',                 label: 'New Registrations' },
+const PAYMENT_FILTERS = [
   { key: 'payment_pending',     label: 'Payment Pending' },
   { key: 'payment_failed',      label: 'Payment Failed' },
   { key: 'payment_successful',  label: 'Payment Successful' },
+] as const
+
+const NON_PAYMENT_FILTERS = [
+  { key: '',                    label: 'All' },
+  { key: 'new',                 label: 'New Registrations' },
   { key: 'documents_pending',   label: 'Documents Pending' },
   { key: 'documents_review',    label: 'Documents Under Review' },
   { key: 'documents_rejected',  label: 'Documents Rejected' },
@@ -151,3 +181,24 @@ export const ADMIN_FILTERS = [
   { key: 'on_hold',             label: 'On Hold' },
   { key: 'cancelled',           label: 'Cancelled' },
 ] as const
+
+/**
+ * Filter chips for the admin applicant list.
+ *
+ * The three payment filters are dropped while payments are off: after the
+ * free-registration migration there is nothing left for them to match, and
+ * an admin tapping "Payment Pending" to find an empty list reads as broken
+ * rather than as "this step does not exist right now".
+ */
+export function adminFiltersFor(paymentsEnabled: boolean) {
+  return paymentsEnabled
+    ? [
+        NON_PAYMENT_FILTERS[0], NON_PAYMENT_FILTERS[1],
+        ...PAYMENT_FILTERS,
+        ...NON_PAYMENT_FILTERS.slice(2),
+      ]
+    : NON_PAYMENT_FILTERS
+}
+
+/** The payments-on filter set — kept for any caller not yet migrated to adminFiltersFor(). */
+export const ADMIN_FILTERS = adminFiltersFor(true)

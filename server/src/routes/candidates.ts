@@ -10,7 +10,9 @@ import { verifyGoogleIdToken, GoogleAuthError } from '../lib/googleAuth'
 import { body } from '../lib/validate'
 import { audit, A } from '../lib/audit'
 import { logActivity, setApplicationStatus, E } from '../lib/activity'
-import { S, PAID_STATUSES, REQUIRED_DOCS, DOC_STATUS } from '../lib/applicationStatus'
+import {
+  S, PAID_STATUSES, REQUIRED_DOCS, DOC_STATUS, statusAfterProfileSaved,
+} from '../lib/applicationStatus'
 
 const router = Router()
 
@@ -233,11 +235,17 @@ router.post('/save-profile', requireAuth('candidate'), async (req: Request, res:
     const current = result.rows[0].application_status as string | null
 
     // Only advance while the application is still pre-payment — re-saving
-    // after payment must never knock it back to PAYMENT_PENDING.
+    // after payment must never knock it back a step. With payments off,
+    // statusAfterProfileSaved() sends the application straight to
+    // DOCUMENTS_PENDING instead of waiting on a step that is switched off.
     if (!current || current === S.REGISTERED || current === S.APPLICATION_STARTED) {
-      await setApplicationStatus(candidateId, S.PAYMENT_PENDING, {
+      const next = statusAfterProfileSaved()
+      await setApplicationStatus(candidateId, next, {
         actorType: 'candidate', actorId: String(candidateId),
-        description: 'Application details submitted — awaiting payment', force: true,
+        description: next === S.DOCUMENTS_PENDING
+          ? 'Application details submitted — registration free, documents unlocked'
+          : 'Application details submitted — awaiting payment',
+        force: true,
       })
     }
 
