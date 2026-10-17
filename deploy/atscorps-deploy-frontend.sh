@@ -17,11 +17,15 @@
 #   TOCTOU between validating the staged build and promoting it (the gap a
 #   plain sudoers rule around `mv`/`rm` can only narrow, never close, because
 #   ec2-user still owns the staged directory until the moment of the
-#   privileged mv): this script's FIRST action moves the staged build out of
-#   ec2-user-writable space and into a location only root can write to
-#   (/var/www is confirmed not writable by ec2-user — see DEPLOYMENT.md
-#   §3.2). Validation happens only after that move, so by the time it runs,
-#   nothing ec2-user does can change what is being validated.
+#   privileged mv): this script's FIRST actions move the staged build into
+#   /var/www (confirmed not writable by ec2-user — see DEPLOYMENT.md §3.2,
+#   so ec2-user can't rename or replace the entry out from under this
+#   script) AND explicitly chown/chmod it to root (because `mv` alone
+#   preserves ec2-user's existing ownership of the CONTENT, which would
+#   otherwise still be directly writable by ec2-user with no sudo at all,
+#   even sitting inside a root-owned directory). Validation happens only
+#   after both, so by the time it runs, nothing ec2-user does — with or
+#   without sudo — can change what is being validated.
 #
 #   The live path momentarily missing during a promotion: the only operation
 #   that changes what is externally visible (what Nginx serves at
@@ -56,11 +60,19 @@ if [ ! -d "$READY" ] || [ -L "$READY" ]; then
   exit 1
 fi
 
-# Take ownership of the candidate before validating it. From this line on,
-# ec2-user cannot write to $INCOMING's parent, so nothing can alter its
-# contents out from under the checks below.
+# Take ownership of the candidate before validating it — in two parts.
+# Moving it into /var/www stops ec2-user from renaming/deleting the entry
+# (that directory is root:root, not writable by ec2-user), but `mv`
+# preserves the ORIGINAL owner of what's moved: without the chown/chmod
+# below, $INCOMING would still be ec2-user-owned and ec2-user-writable
+# content sitting inside a root-owned directory — ec2-user could still
+# edit files inside it directly, no sudo required, both now and later
+# once it's promoted to the live slot. The explicit chown/chmod is what
+# actually closes that, not the move by itself.
 rm -rf "$INCOMING"
 mv "$READY" "$INCOMING"
+chown -R root:root "$INCOMING"
+chmod -R go-w "$INCOMING"
 
 if [ ! -d "$INCOMING" ] || [ -L "$INCOMING" ]; then
   echo "ERROR: staged build is not a plain directory — refusing to promote" >&2

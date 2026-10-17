@@ -77,11 +77,15 @@ two things that design could only narrow:
    moment the privileged `mv` acted on it — the unprivileged check and the
    privileged action were adjacent, not atomic, so a concurrent compromise
    of `ec2-user` could in theory swap the content in between. The helper's
-   *first* action is to move the staged candidate out of `ec2-user`-writable
-   space and into `/var/www` (confirmed not writable by `ec2-user` — §3.2)
-   — only *then* does it validate. From that point on, nothing `ec2-user`
-   does can change what's being validated, because `ec2-user` can no longer
-   write there at all.
+   *first* actions move the staged candidate into `/var/www` (confirmed
+   not writable by `ec2-user` — §3.2, so `ec2-user` can't rename or
+   replace that directory entry) **and** explicitly `chown`/`chmod` it to
+   root — `mv` alone preserves whoever already owned the content, which on
+   its own would leave it still directly editable by `ec2-user` with no
+   `sudo` at all, just sitting inside a root-owned parent. Validation
+   happens only after both steps, so by the time it runs, nothing
+   `ec2-user` does — with or without `sudo` — can change what's being
+   validated.
 2. **The live path being briefly missing during a swap.** A fixed
    literal-directory design can only ever update `/var/www/exservicemanjobs`
    via at least two renames (move the old release out, move the new one
@@ -123,15 +127,30 @@ every future deploy):
 
 ```bash
 sudo mv /var/www/exservicemanjobs /var/www/.frontend-a
+sudo chown -R root:root /var/www/.frontend-a
+sudo chmod -R go-w /var/www/.frontend-a
 sudo ln -s /var/www/.frontend-a /var/www/exservicemanjobs
 ```
+
+**The `chown`/`chmod` lines are not optional.** `mv` alone preserves
+whoever already owns the existing live directory — on this box, confirmed
+via `ls -ld`, that's `ec2-user:ec2-user`. Without explicitly re-owning it,
+`.frontend-a` would sit inside root-owned `/var/www` (so `ec2-user` can't
+rename or delete the entry) while its *contents* stayed directly editable
+by `ec2-user` with no `sudo` at all — the helper script takes care of this
+for every slot it populates from here on (it `chown`s the incoming build
+before validating it), but the *first* slot, created by this one-time
+migration, needs it done by hand once, here.
 
 After this, `/var/www/exservicemanjobs` is a symlink, not a real directory
 — Nginx's `root`/`alias` directive resolves it exactly as before (standard
 symlink-following, not something that requires an nginx.conf change) —
 **provided the real config doesn't set `disable_symlinks` on that path.**
-No nginx.conf file exists in this repository to check, so this is stated
-as a prerequisite to verify on the real box, not something confirmed here:
+No `nginx.conf` file exists in this repository, so this can't be checked
+from the code alone — read-only inspection against the real instance
+(`nginx -T 2>&1 | grep -i disable_symlinks`) has been run and returned no
+output, confirming the assumption holds. Re-run it yourself before
+migrating if you want to double-check:
 
 ```bash
 nginx -T 2>/dev/null | grep -i disable_symlinks   # expect no output
@@ -221,49 +240,64 @@ ln -s /home/ec2-user/ATS_corps/server-a /home/ec2-user/ATS_corps/server
 ```
 
 **This assumes the real `atscorps.service` systemd unit's
-`WorkingDirectory=` is the literal path `/home/ec2-user/ATS_corps/server`**
-— consistent with `BACKEND_LIVE_DIR` in `deploy.yml`, but not confirmed,
-because no `.service` file exists in this repository to check. systemd
-resolves `WorkingDirectory=` by following symlinks at process-start time
-the same way any `chdir()` does, so converting that path from a real
-directory into a symlink requires **no change to the unit file** — but
-this assumption, and the absence of hardening directives like
-`ProtectSystem=` or `ReadWritePaths=` that could restrict following a
-symlink outside an allow-list, have not been verified against the real
-unit file. Check before migrating:
+`WorkingDirectory=` is the literal path `/home/ec2-user/ATS_corps/server`,
+with no hardening directive restricting symlink traversal.** No
+`.service` file exists in this repository to check from the code alone,
+but read-only inspection of the real unit has confirmed it:
+
+```ini
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user/ATS_corps/server
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+```
+
+`WorkingDirectory=` matches exactly, `ExecStart=/usr/bin/npm start`
+matches `server/package.json`'s `"start": "tsx src/index.ts"` (and `tsx`
+is a production `dependencies` entry there, not `devDependencies` — it
+survives `npm ci --omit=dev`, so `npm start` won't fail looking for it),
+and there is no `ProtectSystem=`, `ReadWritePaths=`, or `ReadOnlyPaths=`
+present to restrict following a symlink. Re-run this yourself before
+migrating if you want to double-check:
 
 ```bash
 systemctl cat atscorps.service | grep -E 'WorkingDirectory|ProtectSystem|ReadWritePaths|ReadOnlyPaths'
 ```
 
-If `ProtectSystem` or similar hardening is present and scoped narrowly to
-the literal `server` path, the symlink may need to be added to an
-allow-list directive, which **is** a unit-file change and requires the
-explicit approval this document's constraints call for — it has not been
-made here.
+If hardening is ever added later and scoped narrowly to the literal
+`server` path, the symlink would need to be added to an allow-list
+directive, which **is** a unit-file change requiring the explicit
+approval this document's constraints call for.
 
 ### 3.2 Confirm `/var/www` is not writable by `ec2-user`
 
 Everything in §3.1 — the symlink-safety argument in particular — rests on
 `/var/www` itself being owned by root (or another system account) and not
-writable by the deploy user. This was never directly confirmed against a
-real instance; it was inferred from the existing manual process already
-using `sudo` for this path. Confirm it:
+writable by the deploy user. Read-only inspection of the real instance has
+confirmed this:
 
 ```bash
 ls -ld /var/www /var/www/exservicemanjobs
 ```
 
-If `ec2-user` is not the owner, is not in the owning group, and there is no
-world-write bit, the assumption holds and §3.1 applies as written. If it
-turns out `ec2-user` *does* already own this path, the sudo requirement for
-the frontend promotion can be dropped entirely — a smaller attack surface
-than what's documented here, not a problem.
+Result: `/var/www` is `root:root`, mode `755` — `ec2-user` is neither the
+owner nor in the owning group, and there's no world-write bit, so the
+assumption holds and §3.1 applies as written. `/var/www/exservicemanjobs`
+itself (the directory the migration in §3.1 is about to move) is currently
+`ec2-user:ec2-user` — expected, and exactly why that migration's explicit
+`chown`/`chmod` step matters: the directory entry's parent being
+root-protected doesn't by itself make the directory's own contents
+root-owned.
 
 ### 3.3 Filesystem layout for the slots and staging
 
-Two things are each now confined to one filesystem's worth of renames, and
-should each be confirmed:
+Two things are each now confined to one filesystem's worth of renames.
+Read-only inspection has confirmed both are on the same device
+(`/dev/nvme0n1p1`):
 
 ```bash
 df /var/www
@@ -444,11 +478,15 @@ schema.
 - **The one-time migrations themselves have a small, non-atomic window**
   (§3.1, §3.1.1) — acceptable for a single planned cutover, not something
   that happens on every deploy.
-- **Nginx's and systemd's actual behavior with the new symlink-based paths
-  is unverified** — no `nginx.conf` or `atscorps.service` unit file exists
-  in this repository to check `disable_symlinks`, `WorkingDirectory=`, or
-  hardening directives like `ProtectSystem=`/`ReadWritePaths=` against.
-  §3.1 and §3.1.1 give the exact commands to check before migrating.
+- **Nginx's and systemd's behavior with the new symlink-based paths has
+  been checked read-only, not yet exercised live** — no `nginx.conf` or
+  `atscorps.service` unit file exists in this repository, so `disable_symlinks`,
+  `WorkingDirectory=`, and hardening like `ProtectSystem=`/`ReadWritePaths=`
+  couldn't be checked from the code; read-only inspection of the real
+  instance (§3.1, §3.1.1) found no `disable_symlinks` and no restrictive
+  hardening on the unit. That confirms the assumption holds on paper — it
+  does not substitute for actually running a deploy through the real
+  symlink-based paths once, which hasn't happened yet.
 - **Lint is informational, not blocking** — `npm run lint` currently reports
   a pre-existing baseline unrelated to this pipeline (156 issues at the time
   this was written). Making it a hard gate today would block every future
