@@ -1,6 +1,14 @@
 import { z } from 'zod'
 import type { Request, Response, NextFunction } from 'express'
 
+declare global {
+  namespace Express {
+    interface Request {
+      validatedQuery?: unknown
+    }
+  }
+}
+
 /**
  * Express middleware that validates req.body against a Zod schema.
  * On failure: responds 400 with structured error details.
@@ -20,6 +28,31 @@ export function body<T extends z.ZodTypeAny>(schema: T) {
       return
     }
     req.body = result.data as unknown
+    next()
+  }
+}
+
+/**
+ * Same idea as body(), for req.query — every value Express parses from a
+ * query string arrives as a string (or string[]), so the schema passed here
+ * is expected to coerce/validate from that shape. Stores the parsed result
+ * on req.validatedQuery rather than overwriting req.query, since Express 5's
+ * req.query is a getter-only property on some versions.
+ */
+export function query<T extends z.ZodTypeAny>(schema: T) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const result = schema.safeParse(req.query)
+    if (!result.success) {
+      res.status(400).json({
+        error: 'Invalid query parameters',
+        details: result.error.issues.map((i) => ({
+          field:   i.path.join('.') || 'query',
+          message: i.message,
+        })),
+      })
+      return
+    }
+    req.validatedQuery = result.data as unknown
     next()
   }
 }

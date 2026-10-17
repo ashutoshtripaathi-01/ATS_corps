@@ -502,3 +502,117 @@ export const updateApplicationStatus = (id: string, status: string) =>
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ status }),
   })
+
+/* ── Admin — Candidate Reports ──────────────────────────────────────── */
+export interface ReportCandidateRow {
+  id: number
+  applicationId: string
+  registrationDate: string
+  name: string | null
+  mobile: string | null
+  email: string | null
+  serviceBackground: string | null
+  rank: string | null
+  jobPosition: string
+  preferredLocation: string
+  paymentStatus: 'Pending' | 'Successful' | 'Failed' | 'Cancelled' | 'Not Required'
+  paymentAmount: number
+  applicationStatus: string
+  applicationStatusKey: string | null
+  documentsSubmitted: string
+  documentsMissing: string
+  documentStatus: string
+  lastUpdated: string
+}
+
+export interface ReportFilterParams {
+  name?: string
+  mobile?: string
+  email?: string
+  applicationId?: string
+  status?: string
+  paymentStatus?: 'pending' | 'successful' | 'failed' | 'cancelled' | 'not_required'
+  docStatus?: 'not_available' | 'missing_required' | 'under_review' | 'approved' | 'rejected' | 'submitted'
+  post?: string
+  loc?: string
+  dateFrom?: string
+  dateTo?: string
+}
+
+export const getAdminReportCandidates = (
+  filters: ReportFilterParams,
+  page: number,
+  limit: number,
+) => {
+  const params = Object.fromEntries(
+    Object.entries({ ...filters, page: String(page), limit: String(limit) })
+      .filter(([, v]) => v !== undefined && v !== ''),
+  ) as Record<string, string>
+  const qs = '?' + new URLSearchParams(params).toString()
+  return req<{ candidates: ReportCandidateRow[]; total: number; page: number; limit: number }>(
+    `${API_BASE}/admin/reports/candidates${qs}`,
+  )
+}
+
+/**
+ * Downloads a binary report (Excel/PDF) using the same Bearer-token
+ * authentication every other admin request uses — these are plain GETs,
+ * so there's no FormData/JSON body, but a browser can't attach an
+ * Authorization header to a plain link click, which is why this fetches
+ * the file itself and saves it via a temporary anchor rather than just
+ * pointing the browser at the URL. Reuses the filename the server already
+ * computed (from Content-Disposition) rather than guessing one here.
+ */
+export async function downloadAdminReport(url: string, fallbackFilename: string): Promise<void> {
+  const token = getToken()
+  const headers = new Headers()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  let res = await fetch(url, { headers, credentials: 'include' })
+  if (res.status === 401) {
+    await doRefresh()
+    const retryHeaders = new Headers()
+    const t = getToken()
+    if (t) retryHeaders.set('Authorization', `Bearer ${t}`)
+    res = await fetch(url, { headers: retryHeaders, credentials: 'include' })
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error || `Report generation failed (${res.status})`)
+  }
+
+  const disposition = res.headers.get('Content-Disposition') ?? ''
+  const match = /filename="([^"]+)"/.exec(disposition)
+  const filename = match?.[1] ?? fallbackFilename
+
+  const blob = await res.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(blobUrl)
+}
+
+export function buildReportExportUrl(
+  format: 'xlsx' | 'pdf',
+  scope: 'all' | 'filtered' | 'selected',
+  filters: ReportFilterParams,
+  ids?: number[],
+): string {
+  const params: Record<string, string> = { scope }
+  if (scope === 'filtered') {
+    for (const [k, v] of Object.entries(filters)) if (v) params[k] = v
+  }
+  if (scope === 'selected' && ids) params.ids = ids.join(',')
+  const qs = '?' + new URLSearchParams(params).toString()
+  return `${API_BASE}/admin/reports/candidates/export.${format}${qs}`
+}
+
+export const downloadCandidatePdf = (id: number, applicationId: string) =>
+  downloadAdminReport(
+    `${API_BASE}/admin/reports/candidates/${id}/pdf`,
+    `candidate-${applicationId}.pdf`,
+  )

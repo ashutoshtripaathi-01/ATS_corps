@@ -16,6 +16,7 @@ import applicationRoutes from './routes/applications'
 import paymentRoutes from './routes/payments'
 import documentRoutes from './routes/documents'
 import adminRoutes from './routes/admin'
+import reportsRoutes from './routes/reports'
 
 // Load .env first, then validate — exits with a clear message if anything is wrong
 dotenv.config()
@@ -131,6 +132,9 @@ app.use('/api/jobs',         jobRoutes)
 app.use('/api/applications', applicationRoutes)
 app.use('/api/payments',     paymentRoutes)
 app.use('/api/documents',    documentRoutes)
+// Mounted before the more general /api/admin prefix so a future catch-all
+// route added there can never shadow these.
+app.use('/api/admin/reports', reportsRoutes)
 app.use('/api/admin',        adminRoutes)
 
 /* DB connectivity state, surfaced through /api/health */

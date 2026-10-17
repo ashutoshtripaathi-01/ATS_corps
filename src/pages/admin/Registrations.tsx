@@ -3,11 +3,11 @@ import { motion } from 'framer-motion';
 import {
   Search, Users, ChevronLeft, ChevronRight, Shield, X, Phone, Mail,
   FileText, PhoneCall, StickyNote, Activity, Building2, Loader2,
-  CheckCircle, AlertCircle, Clock, CalendarClock,
+  CheckCircle, AlertCircle, Clock, CalendarClock, Download,
 } from 'lucide-react';
 import {
   getAdminApplicants, getAdminApplicant, updateApplicantStatus,
-  reviewDocument, logCall, addAdminNote, recordOfficeVisit,
+  reviewDocument, logCall, addAdminNote, recordOfficeVisit, downloadCandidatePdf,
   type AdminApplicantDetail, type AdminApplicantRow, type ApplicantRecord,
   type PaymentRecord, type DocumentRecord, type CallLogRecord,
   type AdminNoteRecord, type ActivityEventRecord, type OfficeVisitRecord,
@@ -106,9 +106,25 @@ function DetailDrawer({ id, onClose, onChanged }: {
                 </span>
               </div>
             </div>
-            <button onClick={onClose} className='w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 shrink-0'>
-              <X className='w-4 h-4 text-white' />
-            </button>
+            <div className='flex items-center gap-2 shrink-0'>
+              <button
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await downloadCandidatePdf(id, a.registration_ref ?? `DRAFT-${id}`);
+                  } catch (err) {
+                    toast({ title: 'Could not generate PDF', description: (err as Error).message, variant: 'error' });
+                  } finally { setBusy(false) }
+                }}
+                disabled={busy}
+                title='Download Candidate PDF'
+                className='w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 disabled:opacity-50'>
+                <Download className='w-4 h-4 text-[#F7A607]' />
+              </button>
+              <button onClick={onClose} className='w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20'>
+                <X className='w-4 h-4 text-white' />
+              </button>
+            </div>
           </div>
 
           {/* Status + transitions */}

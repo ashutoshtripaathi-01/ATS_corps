@@ -44,6 +44,7 @@ import AdminCandidates from '@/pages/admin/Candidates'
 import AdminJobs from '@/pages/admin/Jobs'
 import AdminSettings from '@/pages/admin/Settings'
 import AdminRegistrations from '@/pages/admin/Registrations'
+import AdminReports from '@/pages/admin/Reports'
 
 export const router = createBrowserRouter([
   {
@@ -114,6 +115,7 @@ export const router = createBrowserRouter([
       { path: 'candidates',    element: <AdminCandidates /> },
       { path: 'jobs',          element: <AdminJobs /> },
       { path: 'registrations', element: <AdminRegistrations /> },
+      { path: 'reports',       element: <AdminReports /> },
       { path: 'settings',      element: <AdminSettings /> },
     ],
   },
