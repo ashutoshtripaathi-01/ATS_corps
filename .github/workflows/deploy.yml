@@ -135,6 +135,17 @@ jobs:
         # "build" runs `tsc -b && vite build` — a type error fails this step
         # exactly as it would fail a local build. Fatal: Vite build output
         # is what gets deployed, so nothing here can ship a broken bundle.
+        #
+        # VITE_API_URL is public information — it ends up in the bundle
+        # either way — not a secret, so it's a plain literal here rather
+        # than a GitHub secret. Vite freezes import.meta.env at build time:
+        # with no .env file checked into git (by design — see .gitignore)
+        # and nothing setting this previously, every build produced
+        # `API_BASE = "undefined/api"`, breaking every frontend API call
+        # including the one GoogleSignInButton makes to fetch the Google
+        # client id — not a Google-specific bug, a missing build-time value.
+        env:
+          VITE_API_URL: https://api.exservicemanjobs.com
         run: npm run build
 
       # ── Frontend lint — informational only ──────────────────────────

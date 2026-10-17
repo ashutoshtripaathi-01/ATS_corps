@@ -1,5 +1,19 @@
 import { getToken, setToken } from '@/lib/tokenStore'
-export const API_BASE = import.meta.env.VITE_API_URL + '/api'
+
+// import.meta.env.VITE_API_URL is frozen into the bundle at build time (see
+// .github/workflows/deploy.yml). If it's ever unset again, falling through
+// to string concatenation would silently produce the literal path
+// "undefined/api" — every request still "succeeds" in the sense of not
+// throwing immediately, but resolves relative to the current page's own
+// origin instead of the API host, so every API call fails in a way that's
+// hard to tell apart from a real network outage. Failing loud here (a
+// console error, and a same-origin "/api" fallback instead of "undefined/api")
+// makes a future misconfiguration far faster to diagnose.
+const _apiUrl = import.meta.env.VITE_API_URL as string | undefined
+if (!_apiUrl) {
+  console.error('VITE_API_URL is not set — API requests will be sent to the wrong host. Set it at build time.')
+}
+export const API_BASE = (_apiUrl ?? '') + '/api'
 // Uploaded documents are private and are never linked to directly — they are
 // fetched through /api/documents/:id/file. See fetchDocumentBlobUrl below.
 
@@ -60,6 +74,8 @@ async function req<T = any>(url: string, opts?: RequestInit, _retry = true): Pro
 export interface PublicConfig {
   googleClientId: string | null
   razorpayKeyId: string | null
+  /** false while registration is free — the Razorpay flow is hidden, not removed. */
+  paymentsEnabled: boolean
 }
 
 let _config: Promise<PublicConfig> | null = null
