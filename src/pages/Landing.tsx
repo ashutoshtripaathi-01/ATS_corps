@@ -1319,7 +1319,7 @@ export default function Landing() {
                 links: [
                   'Find Employment',
                   'Register Profile',
-                  'Service Fees',
+                  'Verification Process',
                   'Track Applications',
                   'About the Process',
                 ],
