@@ -81,17 +81,38 @@ jobs:
         # branch reports it as 40 zeros — both mean "nothing to diff against",
         # so the safe default in either case is "treat everything as changed"
         # rather than silently skipping a backend deploy that was needed.
+        #
+        # Deliberately no `set -e` here: a failing `git diff` must be caught
+        # and handled explicitly (fall back to backend=true), not left to
+        # propagate. The earlier version piped `git diff` into `grep -q`,
+        # which only reports the LAST command's exit status — if `git diff`
+        # itself failed (for instance a force-push leaving $BEFORE
+        # unreachable), grep would silently see empty input, report "no
+        # match", and backend=false would ship — the opposite of the
+        # documented safe default. git diff's own exit status is captured
+        # explicitly below instead, so that failure mode is closed.
         run: |
           BEFORE="${{ github.event.before }}"
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
             echo "backend=true" >> "$GITHUB_OUTPUT"
             echo "No usable previous commit — treating backend as changed."
+            exit 0
+          fi
+
+          DIFF_OUTPUT=$(git diff --name-only "$BEFORE" "${{ github.sha }}" 2>&1)
+          DIFF_STATUS=$?
+
+          if [ "$DIFF_STATUS" -ne 0 ]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::git diff failed (exit $DIFF_STATUS) — defaulting to backend=true rather than risking a silently skipped backend deploy. Output: $DIFF_OUTPUT"
+            exit 0
+          fi
+
+          if echo "$DIFF_OUTPUT" | grep -q '^server/'; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
           else
-            if git diff --name-only "$BEFORE" "${{ github.sha }}" | grep -q '^server/'; then
-              echo "backend=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "backend=false" >> "$GITHUB_OUTPUT"
-            fi
+            echo "backend=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Node
@@ -210,16 +231,23 @@ jobs:
           # shellcheck disable=SC2086
           ssh $SSH_OPTS "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "echo connected"
 
-      # ── Frontend: stage, verify, then atomically swap into place ──────
+      # ── Frontend: stage, then hand off to the root-owned helper ───────
       # The build is rsynced to a run-unique staging directory under the
       # deploy user's own home directory first — never straight into
-      # /var/www. Only once that copy is confirmed complete does a single
-      # `mv` promote it, which is an atomic rename when both paths share a
-      # filesystem (true on a standard single-volume EC2 instance; see the
-      # deployment README for how to confirm this on yours). The outgoing
-      # directory is kept as a timestamped backup rather than deleted, so a
-      # bad deploy can be undone by hand with one more `mv` — see "Rollback"
-      # in the final report.
+      # /var/www. That directory is then renamed, unprivileged, to one
+      # FIXED path (frontend-ready) that the privileged helper below reads
+      # from — nothing here passes it an argument, so there is no path for
+      # ec2-user-controlled input to reach a privileged command at all.
+      #
+      # All promotion logic — taking ownership of the staged build before
+      # validating it (closing the TOCTOU a plain sudo'd mv/rm rule can only
+      # narrow) and the single atomic symlink rename that makes $LIVE never
+      # resolve to nothing mid-promotion — lives in
+      # deploy/atscorps-deploy-frontend.sh, installed once on the server as
+      # a root-owned, root-only-readable script. See DEPLOYMENT.md §3.1 for
+      # the install steps, the one-time migration from a plain directory to
+      # the symlink+slot layout it requires, and exactly what is and isn't
+      # covered.
       - name: Deploy frontend
         run: |
           set -euo pipefail
@@ -233,57 +261,110 @@ jobs:
             dist/ "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:$STAGE/"
 
           # shellcheck disable=SC2086
-          ssh $SSH_OPTS "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" bash -s -- "$STAGE" "$FRONTEND_LIVE_DIR" <<'REMOTE'
+          ssh $SSH_OPTS "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" bash -s -- "$STAGE" <<'REMOTE'
             set -euo pipefail
             STAGE="$1"
-            LIVE="$2"
+            READY="/home/ec2-user/.deploy-staging/frontend-ready"
 
-            # Refuse to proceed against an unsafe or empty destination —
-            # this is what "verify both paths before using --delete" means
-            # in practice: the swap target is never allowed to be empty,
-            # "/", or anything that does not match the one path this
-            # pipeline is configured to manage.
-            if [ -z "$LIVE" ] || [ "$LIVE" = "/" ] || [ "$LIVE" != "/var/www/exservicemanjobs" ]; then
-              echo "::error::Refusing to deploy — unexpected frontend destination: '$LIVE'"
+            # Unprivileged normalize-and-sanity-check. Not itself a security
+            # boundary (the helper re-validates after taking ownership) —
+            # just a cheap fail-fast before invoking sudo at all.
+            rm -rf "$READY"
+            mv "$STAGE" "$READY"
+            if [ ! -d "$READY" ] || [ -L "$READY" ] || [ ! -f "$READY/index.html" ]; then
+              echo "::error::Staged build looks wrong before even handing off to the promotion helper — aborting"
               exit 1
             fi
 
-            # The staged build must look like a real build before it is
-            # trusted: a partial rsync (network drop mid-transfer) would
-            # fail this check rather than going live with half a site.
-            if [ ! -f "$STAGE/index.html" ]; then
-              echo "::error::Staged build is missing index.html — refusing to promote"
-              exit 1
-            fi
-            FILE_COUNT=$(find "$STAGE" -type f | wc -l)
-            if [ "$FILE_COUNT" -lt 3 ]; then
-              echo "::error::Staged build has suspiciously few files ($FILE_COUNT) — refusing to promote"
-              exit 1
-            fi
-
-            TS=$(date +%Y%m%d%H%M%S)
-            if [ -d "$LIVE" ]; then
-              sudo mv "$LIVE" "${LIVE}.prev-${TS}"
-            fi
-            sudo mv "$STAGE" "$LIVE"
-            echo "Frontend promoted: $FILE_COUNT files live at $LIVE"
+            sudo /usr/local/sbin/atscorps-deploy-frontend
           REMOTE
 
+      # ── Frontend health check, with automatic rollback ────────────────
+      # Hits the real public URL from outside the box — the same request a
+      # user would make — rather than checking localhost on the EC2
+      # instance, which would prove Nginx started but not that the public
+      # path (DNS, TLS, any CDN/proxy in front) actually works. On failure,
+      # repoint the live symlink back to the previous slot via the
+      # dedicated rollback helper (never deletes anything — the failed
+      # build stays exactly where it was promoted to, for inspection), then
+      # re-check once to confirm the rollback actually restored a working
+      # site, and fail the job either way so a bad frontend deploy is never
+      # silently left live. A 200 here only means the page loaded — it is
+      # not a claim that every frontend feature behind it works.
+      - name: Verify frontend health
+        run: |
+          set -euo pipefail
+
+          check_frontend() {
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 10 https://exservicemanjobs.com/ || echo "000")
+            [ "$CODE" = "200" ]
+          }
+
+          OK=false
+          for i in $(seq 1 10); do
+            if check_frontend; then OK=true; break; fi
+            sleep 3
+          done
+
+          if [ "$OK" = "true" ]; then
+            echo "Frontend OK (200)"
+            exit 0
+          fi
+
+          echo "::error::Frontend did not return 200 after deploy — rolling back"
+          # shellcheck disable=SC2086
+          if ssh $SSH_OPTS "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "sudo /usr/local/sbin/atscorps-rollback-frontend"; then
+            echo "::error::Rollback command succeeded — re-checking the site"
+            ROLLBACK_OK=false
+            for i in $(seq 1 10); do
+              if check_frontend; then ROLLBACK_OK=true; break; fi
+              sleep 3
+            done
+            if [ "$ROLLBACK_OK" = "true" ]; then
+              echo "::error::Rolled back successfully — the previous release is live again. The failed release was NOT deleted; see DEPLOYMENT.md §4 to inspect it."
+            else
+              echo "::error::ROLLBACK RAN BUT THE SITE STILL ISN'T RESPONDING — manual intervention required."
+            fi
+          else
+            echo "::error::ROLLBACK COMMAND ITSELF FAILED — manual intervention required. The broken release is still live."
+          fi
+          exit 1
+
       # ── Backend: only when server/ actually changed ───────────────────
-      # Same staging-then-swap shape as the frontend, with two differences
-      # forced by what the backend directory actually contains:
+      # No sudo is used for any of the file operations below — server/
+      # lives inside the deploy user's own home directory, which they
+      # already own. Only the systemctl calls are privileged, each a
+      # complete literal string with no wildcard.
+      #
+      # $LIVE is a symlink rotating between two root-free, ec2-user-owned
+      # slots (server-a / server-b) rather than a real directory that gets
+      # renamed out and back in on every deploy — see DEPLOYMENT.md §3.1 for
+      # the one-time migration this requires and why: with a plain
+      # directory, promoting a release needs at least two renames (move the
+      # old one out of the way, move the new one in), and there is an
+      # inherent window between them where $LIVE resolves to nothing. With
+      # a symlink, the only operation that changes what's live is a single
+      # atomic rename of the link itself, so that window doesn't exist.
+      #
       #   • .env lives only on the box (gitignored, never in this
-      #     checkout) and is copied from the outgoing directory into the
-      #     new one before the swap — it is never generated or overwritten
-      #     from repository content.
+      #     checkout) and is copied from the currently-live slot into the
+      #     newly-staged one before the swap — never generated or
+      #     overwritten from repository content.
       #   • node_modules is installed fresh in staging via `npm ci
       #     --omit=dev`, run on the target host itself rather than shipped
       #     over the network.
+      #
       # uploads/ (legacy locally-stored candidate documents) lives at the
       # repository root, one level above server/ — this step's path scope
       # never reaches it, so it is never read, moved, or deleted here. New
       # documents already go to the private S3 bucket and are untouched by
       # anything in this workflow.
+      #
+      # If the service fails to come up on the new release, the symlink is
+      # atomically repointed back to the previous (untouched, still-intact)
+      # slot and the service restarted from there — the failed build stays
+      # on disk in whichever slot it occupied, for inspection, rather than
+      # being discarded.
       - name: Deploy backend
         if: needs.validate.outputs.backend-changed == 'true'
         run: |
@@ -307,9 +388,17 @@ jobs:
             set -euo pipefail
             STAGE="$1"
             LIVE="$2"
+            SLOT_A="${LIVE}-a"
+            SLOT_B="${LIVE}-b"
+            TMP_LINK="${LIVE}-live-tmp"
 
             if [ -z "$LIVE" ] || [ "$LIVE" = "/" ] || [ "$LIVE" != "/home/ec2-user/ATS_corps/server" ]; then
               echo "::error::Refusing to deploy — unexpected backend destination: '$LIVE'"
+              exit 1
+            fi
+
+            if [ -e "$LIVE" ] && [ ! -L "$LIVE" ]; then
+              echo "::error::$LIVE exists but is a real directory, not the symlink this step expects — run the one-time migration in DEPLOYMENT.md §3.1 first"
               exit 1
             fi
 
@@ -319,28 +408,72 @@ jobs:
             fi
             cp "$LIVE/.env" "$STAGE/.env"
 
-            cd "$STAGE"
-            npm ci --omit=dev
+            ( cd "$STAGE" && npm ci --omit=dev )
 
             if [ ! -f "$STAGE/.env" ] || [ ! -d "$STAGE/node_modules" ] || [ ! -f "$STAGE/src/index.ts" ]; then
               echo "::error::Staged backend failed its completeness check — refusing to promote"
               exit 1
             fi
 
-            TS=$(date +%Y%m%d%H%M%S)
-            mv "$LIVE" "${LIVE}.prev-${TS}"
-            mv "$STAGE" "$LIVE"
-            echo "Backend promoted to $LIVE"
+            # Compare inode identity, not the symlink's stored path text —
+            # a plain string comparison against a readlink result is not
+            # reliable if the target was ever created or read through a
+            # different (but equivalent) path alias, which silently picks
+            # the WRONG "free" slot: the one that is actually live.
+            CURRENT_INODE=""
+            if [ -e "$LIVE" ]; then
+              CURRENT_INODE=$(stat -c %i "$LIVE" 2>/dev/null || true)
+            fi
+            SLOT_A_INODE=""
+            if [ -e "$SLOT_A" ]; then
+              SLOT_A_INODE=$(stat -c %i "$SLOT_A" 2>/dev/null || true)
+            fi
+            CURRENT_TARGET=""
+            if [ -n "$CURRENT_INODE" ] && [ "$CURRENT_INODE" = "$SLOT_A_INODE" ]; then
+              FREE_SLOT="$SLOT_B"
+              CURRENT_TARGET="$SLOT_A"
+            else
+              FREE_SLOT="$SLOT_A"
+              if [ -n "$CURRENT_INODE" ]; then
+                CURRENT_TARGET="$SLOT_B"
+              fi
+            fi
+
+            # Populate the free slot. $LIVE is not touched by anything
+            # above this line, so a failure here leaves the current
+            # release completely unaffected.
+            rm -rf "$FREE_SLOT"
+            mv "$STAGE" "$FREE_SLOT"
+
+            # The only step visible to the running system: a single atomic
+            # rename of the symlink. Never a window where $LIVE is missing.
+            ln -sfn "$FREE_SLOT" "$TMP_LINK"
+            mv -T "$TMP_LINK" "$LIVE"
+            echo "Backend promoted: $LIVE -> $FREE_SLOT"
 
             sudo systemctl restart atscorps.service
-
             sleep 3
-            if ! sudo systemctl is-active --quiet atscorps.service; then
-              echo "::error::atscorps.service is not active after restart"
-              sudo systemctl status atscorps.service --no-pager || true
+
+            if sudo systemctl is-active --quiet atscorps.service; then
+              echo "atscorps.service is active"
+            else
+              echo "::error::atscorps.service failed to start on the new release — rolling back"
+              if [ "$CURRENT_TARGET" != "" ] && [ -d "$CURRENT_TARGET" ]; then
+                ln -sfn "$CURRENT_TARGET" "$TMP_LINK"
+                mv -T "$TMP_LINK" "$LIVE"
+                sudo systemctl restart atscorps.service
+                sleep 3
+                if sudo systemctl is-active --quiet atscorps.service; then
+                  echo "::error::Rolled back to the previous backend release ($CURRENT_TARGET) — it is running. The failed build is kept at $FREE_SLOT for inspection."
+                else
+                  echo "::error::ROLLBACK ALSO FAILED TO START — manual intervention required. Check $LIVE, $CURRENT_TARGET and $FREE_SLOT."
+                  sudo systemctl status atscorps.service --no-pager || true
+                fi
+              else
+                echo "::error::No previous release recorded to roll back to (first-ever deploy?) — manual intervention required. Broken build is at $FREE_SLOT."
+              fi
               exit 1
             fi
-            echo "atscorps.service is active"
           REMOTE
 
       - name: Skip backend deploy (no server/ changes)
