@@ -1,0 +1,384 @@
+name: Deploy to Production
+
+# ─────────────────────────────────────────────────────────────────────────
+# Ex-Serviceman Jobs — production deployment pipeline.
+#
+# Triggers only on a push to main, or a manual run. Never on pull requests
+# or other branches — there is no staging environment, so "main" IS
+# production, and validate-then-deploy only makes sense gated this tightly.
+#
+# Architecture:
+#   1. validate — install, typecheck, test, build. Nothing here can touch
+#      the server; a failure here stops the pipeline before deploy even
+#      starts.
+#   2. deploy   — ships the artifact validate just built (never rebuilt on
+#      the deploy job, so what was tested is byte-for-byte what ships),
+#      swaps it into place on EC2, and verifies the live site afterwards.
+#
+# The two jobs share one concurrency group so a second push mid-deploy
+# queues behind the first rather than racing it.
+# ─────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Default GITHUB_TOKEN permissions for every job: read-only. Nothing here
+# opens a PR, writes an issue, or publishes a package, so nothing beyond
+# checkout access is needed.
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  # Hardcoded, not derived from any secret or input — this is the one
+  # fact the --delete safety check in the deploy job is built around.
+  FRONTEND_LIVE_DIR: /var/www/exservicemanjobs
+  BACKEND_LIVE_DIR: /home/ec2-user/ATS_corps/server
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════
+  # VALIDATE — typecheck, test, lint (informational), build. Blocks deploy.
+  # ═══════════════════════════════════════════════════════════════════════
+  validate:
+    name: Validate & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      backend-changed: ${{ steps.changes.outputs.backend }}
+
+    services:
+      # Ephemeral database for the backend test suite only. initDb() builds
+      # the full schema against it (see "Bootstrap test database" below);
+      # nothing here is ever reachable from, or related to, production data.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: atscorps_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0 # full history — needed to diff against the pre-push SHA below
+
+      - name: Determine what changed
+        id: changes
+        # workflow_dispatch has no "before" SHA, and the very first push to a
+        # branch reports it as 40 zeros — both mean "nothing to diff against",
+        # so the safe default in either case is "treat everything as changed"
+        # rather than silently skipping a backend deploy that was needed.
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "No usable previous commit — treating backend as changed."
+          else
+            if git diff --name-only "$BEFORE" "${{ github.sha }}" | grep -q '^server/'; then
+              echo "backend=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "backend=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Frontend typecheck + production build
+        # "build" runs `tsc -b && vite build` — a type error fails this step
+        # exactly as it would fail a local build. Fatal: Vite build output
+        # is what gets deployed, so nothing here can ship a broken bundle.
+        run: npm run build
+
+      # ── Frontend lint — informational only ──────────────────────────
+      # `npm run lint` currently reports a pre-existing baseline unrelated
+      # to this pipeline. Making it blocking today would fail every future
+      # deploy, including ones that fix nothing it complains about. It
+      # still runs on every build so regressions are visible in the log —
+      # it is just not a merge/deploy gate until that baseline is cleared.
+      - name: Frontend lint (non-blocking)
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Backend typecheck
+        working-directory: server
+        run: npm run typecheck
+
+      - name: Bootstrap test database schema
+        working-directory: server
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: atscorps_ci
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: npm run db:bootstrap
+
+      - name: Backend tests
+        working-directory: server
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: atscorps_ci
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          # Test-only value — 32 'x' characters, satisfies the length check
+          # signAccessToken() needs at runtime. Never used outside this job.
+          JWT_SECRET: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        run: npm test
+
+      - name: Upload frontend build artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: frontend-dist
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # DEPLOY — ships the validated artifact to EC2. Runs only after validate
+  # passes, and only for a push to main or a manual run.
+  # ═══════════════════════════════════════════════════════════════════════
+  deploy:
+    name: Deploy to EC2
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download frontend build artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: frontend-dist
+          path: dist
+
+      # ── SSH setup ────────────────────────────────────────────────────
+      # The private key is written to a runner-local temp file (cleaned up
+      # unconditionally at the end of the job) rather than passed inline on
+      # any command line. known_hosts comes from a secret the operator
+      # populates once via `ssh-keyscan`, out of band — see the deployment
+      # README for the exact command. This is what makes
+      # StrictHostKeyChecking=yes possible: the host key is verified against
+      # a value the operator vouched for, not accepted blindly.
+      - name: Set up SSH
+        run: |
+          mkdir -p "$RUNNER_TEMP/.ssh"
+          chmod 700 "$RUNNER_TEMP/.ssh"
+
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > "$RUNNER_TEMP/.ssh/deploy_key"
+          chmod 600 "$RUNNER_TEMP/.ssh/deploy_key"
+
+          echo "${{ secrets.EC2_KNOWN_HOSTS }}" > "$RUNNER_TEMP/.ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/.ssh/known_hosts"
+
+          {
+            echo "SSH_OPTS=-i $RUNNER_TEMP/.ssh/deploy_key -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/.ssh/known_hosts -o ConnectTimeout=15"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify SSH connectivity
+        run: |
+          # shellcheck disable=SC2086
+          ssh $SSH_OPTS "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "echo connected"
+
+      # ── Frontend: stage, verify, then atomically swap into place ──────
+      # The build is rsynced to a run-unique staging directory under the
+      # deploy user's own home directory first — never straight into
+      # /var/www. Only once that copy is confirmed complete does a single
+      # `mv` promote it, which is an atomic rename when both paths share a
+      # filesystem (true on a standard single-volume EC2 instance; see the
+      # deployment README for how to confirm this on yours). The outgoing
+      # directory is kept as a timestamped backup rather than deleted, so a
+      # bad deploy can be undone by hand with one more `mv` — see "Rollback"
+      # in the final report.
+      - name: Deploy frontend
+        run: |
+          set -euo pipefail
+          STAGE="/home/${{ secrets.EC2_USER }}/.deploy-staging/frontend-${{ github.run_id }}"
+
+          # shellcheck disable=SC2086
+          ssh $SSH_OPTS "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "mkdir -p '$STAGE'"
+
+          # shellcheck disable=SC2086
+          rsync -az --delete -e "ssh $SSH_OPTS" \
+            dist/ "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:$STAGE/"
+
+          # shellcheck disable=SC2086
+          ssh $SSH_OPTS "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" bash -s -- "$STAGE" "$FRONTEND_LIVE_DIR" <<'REMOTE'
+            set -euo pipefail
+            STAGE="$1"
+            LIVE="$2"
+
+            # Refuse to proceed against an unsafe or empty destination —
+            # this is what "verify both paths before using --delete" means
+            # in practice: the swap target is never allowed to be empty,
+            # "/", or anything that does not match the one path this
+            # pipeline is configured to manage.
+            if [ -z "$LIVE" ] || [ "$LIVE" = "/" ] || [ "$LIVE" != "/var/www/exservicemanjobs" ]; then
+              echo "::error::Refusing to deploy — unexpected frontend destination: '$LIVE'"
+              exit 1
+            fi
+
+            # The staged build must look like a real build before it is
+            # trusted: a partial rsync (network drop mid-transfer) would
+            # fail this check rather than going live with half a site.
+            if [ ! -f "$STAGE/index.html" ]; then
+              echo "::error::Staged build is missing index.html — refusing to promote"
+              exit 1
+            fi
+            FILE_COUNT=$(find "$STAGE" -type f | wc -l)
+            if [ "$FILE_COUNT" -lt 3 ]; then
+              echo "::error::Staged build has suspiciously few files ($FILE_COUNT) — refusing to promote"
+              exit 1
+            fi
+
+            TS=$(date +%Y%m%d%H%M%S)
+            if [ -d "$LIVE" ]; then
+              sudo mv "$LIVE" "${LIVE}.prev-${TS}"
+            fi
+            sudo mv "$STAGE" "$LIVE"
+            echo "Frontend promoted: $FILE_COUNT files live at $LIVE"
+          REMOTE
+
+      # ── Backend: only when server/ actually changed ───────────────────
+      # Same staging-then-swap shape as the frontend, with two differences
+      # forced by what the backend directory actually contains:
+      #   • .env lives only on the box (gitignored, never in this
+      #     checkout) and is copied from the outgoing directory into the
+      #     new one before the swap — it is never generated or overwritten
+      #     from repository content.
+      #   • node_modules is installed fresh in staging via `npm ci
+      #     --omit=dev`, run on the target host itself rather than shipped
+      #     over the network.
+      # uploads/ (legacy locally-stored candidate documents) lives at the
+      # repository root, one level above server/ — this step's path scope
+      # never reaches it, so it is never read, moved, or deleted here. New
+      # documents already go to the private S3 bucket and are untouched by
+      # anything in this workflow.
+      - name: Deploy backend
+        if: needs.validate.outputs.backend-changed == 'true'
+        run: |
+          set -euo pipefail
+          STAGE="/home/${{ secrets.EC2_USER }}/.deploy-staging/server-${{ github.run_id }}"
+
+          # shellcheck disable=SC2086
+          ssh $SSH_OPTS "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "mkdir -p '$STAGE'"
+
+          # Only source files the server actually runs — never .env,
+          # node_modules, dist/ (unused; production runs TS directly via
+          # tsx) or the test suite.
+          # shellcheck disable=SC2086
+          rsync -az --delete \
+            --exclude '.env' --exclude 'node_modules' --exclude 'dist' --exclude 'src/__tests__' \
+            -e "ssh $SSH_OPTS" \
+            server/ "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:$STAGE/"
+
+          # shellcheck disable=SC2086
+          ssh $SSH_OPTS "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" bash -s -- "$STAGE" "$BACKEND_LIVE_DIR" <<'REMOTE'
+            set -euo pipefail
+            STAGE="$1"
+            LIVE="$2"
+
+            if [ -z "$LIVE" ] || [ "$LIVE" = "/" ] || [ "$LIVE" != "/home/ec2-user/ATS_corps/server" ]; then
+              echo "::error::Refusing to deploy — unexpected backend destination: '$LIVE'"
+              exit 1
+            fi
+
+            if [ ! -f "$LIVE/.env" ]; then
+              echo "::error::No .env found in the current live backend directory — aborting rather than deploying without one"
+              exit 1
+            fi
+            cp "$LIVE/.env" "$STAGE/.env"
+
+            cd "$STAGE"
+            npm ci --omit=dev
+
+            if [ ! -f "$STAGE/.env" ] || [ ! -d "$STAGE/node_modules" ] || [ ! -f "$STAGE/src/index.ts" ]; then
+              echo "::error::Staged backend failed its completeness check — refusing to promote"
+              exit 1
+            fi
+
+            TS=$(date +%Y%m%d%H%M%S)
+            mv "$LIVE" "${LIVE}.prev-${TS}"
+            mv "$STAGE" "$LIVE"
+            echo "Backend promoted to $LIVE"
+
+            sudo systemctl restart atscorps.service
+
+            sleep 3
+            if ! sudo systemctl is-active --quiet atscorps.service; then
+              echo "::error::atscorps.service is not active after restart"
+              sudo systemctl status atscorps.service --no-pager || true
+              exit 1
+            fi
+            echo "atscorps.service is active"
+          REMOTE
+
+      - name: Skip backend deploy (no server/ changes)
+        if: needs.validate.outputs.backend-changed != 'true'
+        run: echo "No changes under server/ since the previous deploy — backend left untouched, service not restarted."
+
+      # ── Post-deploy health check ──────────────────────────────────────
+      # Hits the real public endpoints, not localhost on the box — this
+      # confirms Nginx, the backend process and the database are all
+      # actually reachable end-to-end, the same way a real user would hit
+      # them. Retries tolerate the few seconds a fresh systemd restart
+      # needs before the port is accepting connections.
+      - name: Verify production health
+        run: |
+          set -euo pipefail
+
+          echo "Checking frontend…"
+          for i in $(seq 1 10); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 10 https://exservicemanjobs.com/ || echo "000")
+            if [ "$CODE" = "200" ]; then echo "Frontend OK (200)"; break; fi
+            if [ "$i" = "10" ]; then echo "::error::Frontend did not return 200 after 10 attempts (last: $CODE)"; exit 1; fi
+            sleep 3
+          done
+
+          echo "Checking backend…"
+          for i in $(seq 1 10); do
+            BODY=$(curl -s -m 10 https://api.exservicemanjobs.com/api/health || echo "")
+            if echo "$BODY" | grep -q '"status":"ok"'; then
+              echo "Backend OK: $BODY"
+              break
+            fi
+            if [ "$i" = "10" ]; then
+              echo "::error::Backend health check failed after 10 attempts. Last response: $BODY"
+              exit 1
+            fi
+            sleep 3
+          done
+
+      - name: Clean up SSH key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/.ssh"
