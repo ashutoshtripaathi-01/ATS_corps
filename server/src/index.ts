@@ -5,10 +5,14 @@ import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
 import dotenv from 'dotenv'
 import { validateEnv } from './lib/env'
+import {
+  parseAllowedOrigins, buildNetlifyPreviewPatterns, isOriginAllowed, OriginPolicy,
+} from './lib/cors'
 import { paymentsEnabled } from './lib/applicationStatus'
 import { initDb, dbTarget } from './db'
 import { startTokenCleanupJob } from './jobs/tokenCleanup'
 import authRoutes from './routes/auth'
+import devBypassRoutes from './routes/devBypass'
 import candidateRoutes from './routes/candidates'
 import employerRoutes from './routes/employers'
 import jobRoutes from './routes/jobs'
@@ -60,40 +64,20 @@ app.use(
 )
 
 /* ── CORS — must allow credentials for the httpOnly refresh-token cookie */
-// FRONTEND_URL may list several origins (comma-separated). Normalise each by
-// trimming whitespace and any trailing slash, since browsers send the Origin
-// header WITHOUT a trailing slash — a mismatch there is the #1 cause of CORS
-// failures behind Netlify/Render.
-const allowedOrigins = _env.FRONTEND_URL
-  .split(',')
-  .map((o) => o.trim().replace(/\/+$/, ''))
-  .filter(Boolean)
-
-// For any allowed *.netlify.app site, also permit its deploy-preview and
-// branch-deploy subdomains (e.g. deploy-preview-3--atscorps.netlify.app).
-const netlifyPreviewPatterns = allowedOrigins
-  .map((o) => /^https:\/\/([a-z0-9-]+)\.netlify\.app$/.exec(o)?.[1])
-  .filter((site): site is string => Boolean(site))
-  .map((site) => new RegExp(`^https://[a-z0-9-]+--${site}\\.netlify\\.app$`))
-
-// localhost / 127.0.0.1 on any port — allowed in every environment so a local
-// frontend can be pointed at the live backend for testing. Tighten this (drop
-// the prod case) once you no longer need local-against-production testing.
-const LOCALHOST_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
-
-const isOriginAllowed = (origin: string): boolean => {
-  const clean = origin.replace(/\/+$/, '')
-  if (LOCALHOST_RE.test(clean)) return true
-  if (allowedOrigins.includes(clean)) return true
-  if (netlifyPreviewPatterns.some((re) => re.test(clean))) return true
-  return false
+// Logic lives in lib/cors.ts (unit-tested there) — this is just the wiring.
+const allowedOrigins          = parseAllowedOrigins(_env.FRONTEND_URL)
+const netlifyPreviewPatterns  = buildNetlifyPreviewPatterns(allowedOrigins)
+const originPolicy: OriginPolicy = {
+  allowedOrigins,
+  netlifyPreviewPatterns,
+  isProd: _env.NODE_ENV === 'production',
 }
 
 const corsOptions: cors.CorsOptions = {
   origin(origin, callback) {
     // No Origin header → same-origin, curl, or server-to-server. Allow it.
     if (!origin) return callback(null, true)
-    if (isOriginAllowed(origin)) return callback(null, true)
+    if (isOriginAllowed(origin, originPolicy)) return callback(null, true)
     return callback(new Error(`CORS: origin not allowed — ${origin}`))
   },
   credentials: true,
@@ -103,7 +87,15 @@ app.options('*', cors(corsOptions))
 app.use(cors(corsOptions))
 
 /* ── Body parsing ────────────────────────────────────────────────────── */
-app.use(express.json({ limit: '1mb' }))
+// `verify` stashes the exact raw bytes alongside the parsed body. A Razorpay
+// webhook signature is an HMAC over those exact bytes — recomputing it from
+// the parsed-then-re-serialized object can disagree over key order or
+// whitespace even for a perfectly genuine event, so the webhook route
+// (payments.ts) needs the untouched buffer, not JSON.stringify(req.body).
+app.use(express.json({
+  limit: '1mb',
+  verify: (req, _res, buf) => { (req as express.Request).rawBody = buf },
+}))
 app.use(express.urlencoded({ extended: true, limit: '1mb' }))
 app.use(cookieParser())
 
@@ -126,6 +118,12 @@ app.use(
 
 /* ── API routes ──────────────────────────────────────────────────────── */
 app.use('/api/auth',         authRoutes)
+// Structurally excluded from production: this import is never mounted at
+// all on a production server, not merely blocked by a runtime check inside
+// the handler. A request to /api/auth/dev-bypass in production now 404s —
+// the route doesn't exist on this router table — rather than reaching a
+// handler that answers 403 and confirms the mechanism exists.
+if (_env.NODE_ENV !== 'production') app.use('/api/auth', devBypassRoutes)
 app.use('/api/candidates',   candidateRoutes)
 app.use('/api/employers',    employerRoutes)
 app.use('/api/jobs',         jobRoutes)

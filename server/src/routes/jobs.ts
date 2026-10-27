@@ -51,7 +51,7 @@ router.post('/', requireAuth('employer'), async (req: Request, res: Response) =>
     return res.status(201).json({ success: true, job: withRef.rows[0] })
   } catch (e: any) {
     console.error('[Job create]', e)
-    return res.status(500).json({ error: 'Failed to post job', detail: e.message })
+    return res.status(500).json({ error: 'Failed to post job' })
   }
 })
 
@@ -82,7 +82,8 @@ router.get('/', async (req: Request, res: Response) => {
     )
     return res.json(result.rows)
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[jobs/list]', e)
+    return res.status(500).json({ error: 'Failed to load jobs' })
   }
 })
 
@@ -103,7 +104,8 @@ router.get('/employer/:employerId', requireAuth('employer', 'admin'), async (req
     )
     return res.json(result.rows)
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[jobs/employer]', e)
+    return res.status(500).json({ error: 'Failed to load jobs' })
   }
 })
 
@@ -120,7 +122,8 @@ router.get('/admin/all', requireAuth('admin'), async (_req: Request, res: Respon
     )
     return res.json(result.rows)
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[jobs/admin-all]', e)
+    return res.status(500).json({ error: 'Failed to load jobs' })
   }
 })
 
@@ -139,7 +142,8 @@ router.get('/:id', async (req: Request, res: Response) => {
     if (result.rows.length === 0) return res.status(404).json({ error: 'Job not found' })
     return res.json(result.rows[0])
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[jobs/get]', e)
+    return res.status(500).json({ error: 'Failed to load job' })
   }
 })
 
@@ -165,7 +169,8 @@ router.patch('/:id/status', requireAuth('employer', 'admin'), async (req: Reques
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' })
     return res.json({ success: true, job: result.rows[0] })
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[jobs/status]', e)
+    return res.status(500).json({ error: 'Failed to update job status' })
   }
 })
 
@@ -183,7 +188,8 @@ router.delete('/:id', requireAuth('employer', 'admin'), async (req: Request, res
     await pool.query('DELETE FROM jobs WHERE id=$1', [req.params.id])
     return res.json({ success: true })
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[jobs/delete]', e)
+    return res.status(500).json({ error: 'Failed to delete job' })
   }
 })
 

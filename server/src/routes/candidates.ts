@@ -11,7 +11,7 @@ import { body } from '../lib/validate'
 import { audit, A } from '../lib/audit'
 import { logActivity, setApplicationStatus, E } from '../lib/activity'
 import {
-  S, PAID_STATUSES, REQUIRED_DOCS, DOC_STATUS, statusAfterProfileSaved,
+  S, PAID_STATUSES, REQUIRED_DOCS, DOC_STATUS, statusAfterProfileSaved, registrationFeeRupees,
 } from '../lib/applicationStatus'
 
 const router = Router()
@@ -184,7 +184,9 @@ router.post('/save-profile', requireAuth('candidate'), async (req: Request, res:
     const candidateId = Number(req.auth!.id)
     const {
       mobile, force, rank, fullName, unit, retirementDate,
-      post, otherPost, gunLicense, loc1, loc2, loc3, applicationFee,
+      post, otherPost, gunLicense, loc1, loc2, loc3,
+      // applicationFee from the client is intentionally never read here —
+      // see the UPDATE below, which derives the fee itself.
     } = req.body as Record<string, string>
 
     if (!mobile || !force || !rank || !fullName || !unit || !retirementDate || !post || !loc1)
@@ -199,6 +201,14 @@ router.post('/save-profile', requireAuth('candidate'), async (req: Request, res:
     )
     if (conflict.rows.length > 0)
       return res.status(409).json({ error: 'This mobile number is already registered with another account' })
+
+    // The fee is derived from the server's own PAYMENTS_ENABLED flag and the
+    // fixed amount payments.ts actually charges — never from whatever the
+    // client's request body claims. A client sending applicationFee: 0 (or
+    // any other value) while payments are on cannot change what gets
+    // recorded here, and it has no effect on what Razorpay is told to
+    // charge either way, since that was already independent of this field.
+    const applicationFee = registrationFeeRupees()
 
     const result = await pool.query(
       `UPDATE candidates SET
@@ -225,7 +235,7 @@ router.post('/save-profile', requireAuth('candidate'), async (req: Request, res:
         fullName, mobile, force, rank, unit, retirementDate,
         post, otherPost || null, gunLicense || null,
         loc1, loc2 || null, loc3 || null,
-        applicationFee ? Number(applicationFee) : 0,
+        applicationFee,
         candidateId,
       ],
     )
@@ -263,7 +273,7 @@ router.post('/save-profile', requireAuth('candidate'), async (req: Request, res:
     if (e.code === '23505')
       return res.status(409).json({ error: 'Mobile number already registered' })
     console.error('[save-profile]', e)
-    return res.status(500).json({ error: 'Failed to save profile', detail: e.message })
+    return res.status(500).json({ error: 'Failed to save profile' })
   }
 })
 
@@ -322,9 +332,10 @@ router.patch('/update-draft', requireAuth('candidate'), async (req: Request, res
 
     return res.json({ success: true })
   } catch (e: any) {
-    // Autosave errors should not crash the UI — return a structured error
+    // Autosave errors should not crash the UI — log the real cause server-
+    // side, but never hand the client a raw DB/driver message.
     console.error('[update-draft]', e.message)
-    return res.status(400).json({ error: e.message })
+    return res.status(400).json({ error: 'Could not save your changes. Please try again.' })
   }
 })
 
@@ -411,7 +422,8 @@ router.get('/admin/stats', requireAuth('admin'), async (_req: Request, res: Resp
       recentCandidates: recent.rows,
     })
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[candidates/admin-stats]', e)
+    return res.status(500).json({ error: 'Failed to load dashboard stats' })
   }
 })
 
@@ -463,7 +475,8 @@ router.get('/admin/registrations', requireAuth('admin'), async (req: Request, re
       limit:  limitNum,
     })
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[candidates/admin-registrations]', e)
+    return res.status(500).json({ error: 'Failed to load registrations' })
   }
 })
 
@@ -473,7 +486,8 @@ router.get('/admin/all', requireAuth('admin'), async (_req: Request, res: Respon
     const result = await pool.query('SELECT * FROM candidates ORDER BY created_at DESC')
     return res.json(result.rows)
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[candidates/admin-all]', e)
+    return res.status(500).json({ error: 'Failed to load candidates' })
   }
 })
 

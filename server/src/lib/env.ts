@@ -26,12 +26,10 @@ const schema = z
     // Razorpay — required for live payments, optional when DEV_BYPASS=true
     RAZORPAY_KEY_ID:     z.string().optional(),
     RAZORPAY_KEY_SECRET: z.string().optional(),
-    // MSG91 SMS-OTP — when AUTH_KEY + OTP_TEMPLATE_ID are set, OTPs are sent by
-    // SMS. If unset, the server falls back to returning the OTP in the response
-    // (dev/demo only). SENDER_ID is optional (your DLT-approved header).
-    MSG91_AUTH_KEY:       z.string().optional(),
-    MSG91_OTP_TEMPLATE_ID:z.string().optional(),
-    MSG91_SENDER_ID:      z.string().optional(),
+    // Separate secret for the Razorpay webhook (configured independently in
+    // the Razorpay dashboard, distinct from RAZORPAY_KEY_SECRET) — only
+    // needed once the webhook is actually enabled in the dashboard.
+    RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
     // Dev-only bypass — NEVER set to true in production
     DEV_BYPASS:          z.enum(['true', 'false']).default('false'),
   })

@@ -63,10 +63,6 @@ export const mobile = z
   .string()
   .regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit Indian mobile number')
 
-export const otp = z
-  .string()
-  .regex(/^\d{6}$/, 'OTP must be exactly 6 digits')
-
 export const email = z.string().email('Invalid email address')
 
 export const password = z

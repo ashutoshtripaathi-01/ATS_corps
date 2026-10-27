@@ -86,7 +86,7 @@ router.get('/applicants', async (req: Request, res: Response) => {
     })
   } catch (e: any) {
     console.error('[admin/applicants]', e)
-    return res.status(500).json({ error: e.message })
+    return res.status(500).json({ error: 'Failed to load applicants' })
   }
 })
 
@@ -130,7 +130,7 @@ router.get('/metrics', async (_req: Request, res: Response) => {
     })
   } catch (e: any) {
     console.error('[admin/metrics]', e)
-    return res.status(500).json({ error: e.message })
+    return res.status(500).json({ error: 'Failed to load metrics' })
   }
 })
 
@@ -184,7 +184,7 @@ router.get('/applicants/:id', async (req: Request, res: Response) => {
     })
   } catch (e: any) {
     console.error('[admin/applicant]', e)
-    return res.status(500).json({ error: e.message })
+    return res.status(500).json({ error: 'Failed to load applicant' })
   }
 })
 
@@ -214,7 +214,7 @@ router.patch('/applicants/:id/status', body(statusSchema), async (req: Request, 
                       allowedStatuses: nextStatuses(status) })
   } catch (e: any) {
     console.error('[admin/status]', e)
-    return res.status(500).json({ error: e.message })
+    return res.status(500).json({ error: 'Failed to update applicant status' })
   }
 })
 
@@ -252,7 +252,7 @@ router.post('/applicants/:id/calls', body(callSchema), async (req: Request, res:
     return res.status(201).json({ success: true, call: rows[0] })
   } catch (e: any) {
     console.error('[admin/calls]', e)
-    return res.status(500).json({ error: e.message })
+    return res.status(500).json({ error: 'Failed to log call' })
   }
 })
 
@@ -275,7 +275,7 @@ router.post('/applicants/:id/notes', body(noteSchema), async (req: Request, res:
     return res.status(201).json({ success: true, note: rows[0] })
   } catch (e: any) {
     console.error('[admin/notes]', e)
-    return res.status(500).json({ error: e.message })
+    return res.status(500).json({ error: 'Failed to add note' })
   }
 })
 
@@ -335,7 +335,7 @@ router.post('/applicants/:id/office-visit', body(visitSchema), async (req: Reque
   } catch (e: any) {
     await client.query('ROLLBACK').catch(() => {})
     console.error('[admin/office-visit]', e)
-    return res.status(500).json({ error: e.message })
+    return res.status(500).json({ error: 'Failed to record office visit' })
   } finally {
     client.release()
   }
@@ -352,7 +352,8 @@ router.patch('/applicants/:id/assign', async (req: Request, res: Response) => {
       [assignee || null, id])
     return res.json({ success: true, assignedAdmin: assignee || null })
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[admin/assign]', e)
+    return res.status(500).json({ error: 'Failed to assign applicant' })
   }
 })
 

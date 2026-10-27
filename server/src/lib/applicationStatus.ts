@@ -110,6 +110,26 @@ export function paymentsEnabled(): boolean {
   return String(process.env.PAYMENTS_ENABLED ?? '').toLowerCase() === 'true'
 }
 
+/**
+ * ₹5,000 registration fee, in paise — the one authoritative amount
+ * Razorpay is ever told to charge (payments.ts's /create-order). Exported
+ * here, rather than left as a private constant inside payments.ts, so any
+ * OTHER place that needs "what is the fee" (candidates.ts's save-profile,
+ * admin reports) derives it from this single source instead of trusting a
+ * client-supplied number or redefining the amount a second time.
+ */
+export const REGISTRATION_FEE_PAISE = 500000
+
+/**
+ * The fee a candidate's record should show, in rupees — what's actually
+ * owed right now, not what the client claims. Zero whenever payments are
+ * off, regardless of anything the client sends; save-profile uses this
+ * instead of the request body's `applicationFee` field.
+ */
+export function registrationFeeRupees(): number {
+  return paymentsEnabled() ? REGISTRATION_FEE_PAISE / 100 : 0
+}
+
 /** Statuses an application sits in while it is waiting to be paid for. */
 export const AWAITING_PAYMENT: AppStatus[] = [
   S.PAYMENT_PENDING, S.PAYMENT_FAILED, S.PAYMENT_CANCELLED,

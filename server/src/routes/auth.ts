@@ -9,10 +9,11 @@ import {
   revokeRefreshToken,
 } from '../lib/tokens'
 import { body } from '../lib/validate'
-import { isLocked, recordFailure, recordSuccess } from '../lib/lockout'
+import {
+  isLocked, recordFailure, recordSuccess,
+  beginGlobalAttempt, clearGlobalThrottle,
+} from '../lib/lockout'
 import { audit, A } from '../lib/audit'
-import { env } from '../lib/env'
-import { pool } from '../db'
 
 const router = Router()
 
@@ -53,6 +54,54 @@ async function getAdminHash(): Promise<string> {
 // Pre-warm so first login is instant
 getAdminHash().catch(console.error)
 
+/*
+ * The lockout key used to be `admin:${email}`, with no IP component at all.
+ * Since there is exactly one admin account, that meant ANY unauthenticated
+ * source — from anywhere — could lock the real admin out of their own
+ * account for 15 minutes by submitting 5 wrong passwords, repeatable
+ * indefinitely. It also keyed on the raw, unnormalized email, so
+ * `Admin@X.com` vs `admin@x.com` each got a fresh attempt budget — a
+ * trivial lockout-counting bypass (zod's email() schema already rejects
+ * leading/trailing whitespace before this handler ever sees it, so that
+ * specific variant was never actually reachable).
+ *
+ * The key is now per-(account + IP): what actually protects THIS account
+ * is now scoped to THIS source, so one IP's failures can never lock out a
+ * different IP's legitimate login. A single source trying many different
+ * email values against this route doesn't need a second, separate lockout
+ * layer here — `authLimiter` above already caps any one IP to 5 requests
+ * per 15 minutes on this exact route, regardless of which email each
+ * request claims, which is at least as strict as anything a second lock
+ * keyed only on IP could add on top.
+ *
+ * IP comes from Express's own req.ip, which already respects this app's
+ * `trust proxy` setting (index.ts sets it to the literal hop count `1` in
+ * production, not `true`/unbounded) — never read directly from a raw
+ * X-Forwarded-For header, which a client can freely set. If this app were
+ * ever deployed without exactly one trusted reverse proxy in front of it
+ * (or with Node's port directly reachable from outside Nginx), `req.ip`
+ * would no longer be trustworthy and this entire per-IP scheme — this lock
+ * and the global throttle below — would need re-evaluating; that is an
+ * infrastructure precondition, not something this file can enforce.
+ *
+ * On top of the per-(account, IP) lock, a second, account-wide signal (see
+ * lib/lockout.ts's beginGlobalAttempt) adds a capped, self-decaying DELAY
+ * once enough attempts pile up against the admin account from ANY
+ * combination of IPs — closing the distributed-brute-force gap the per-IP
+ * lock alone leaves open, without reintroducing a global hard lock an
+ * anonymous caller could trigger. That reservation is made in a single
+ * synchronous call specifically so concurrent requests can't race each
+ * other past it — see lockout.ts for the full trade-off and race writeup.
+ */
+function clientIp(req: Request): string {
+  return req.ip ?? 'unknown'
+}
+
+/** One global key for the one admin account — not derived from client input. */
+const GLOBAL_THROTTLE_KEY = 'admin:global'
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 /* ── POST /api/auth/admin/login ─────────────────────────────────────── */
 router.post(
   '/admin/login',
@@ -60,37 +109,52 @@ router.post(
   body(adminLoginSchema),
   async (req: Request, res: Response) => {
     const { email, password } = req.body as z.infer<typeof adminLoginSchema>
-    const lockKey = `admin:${email}`
+    const normalizedEmail = email.trim().toLowerCase()
+    const ip      = clientIp(req)
+    const acctKey = `admin:${normalizedEmail}:${ip}`
 
-    // 1. Account lockout check
-    const { locked, retryAfterMs } = isLocked(lockKey)
+    // 1. Lockout check
+    const { locked, retryAfterMs } = isLocked(acctKey)
     if (locked) {
       const minutes = Math.ceil((retryAfterMs ?? 0) / 60_000)
-      audit(A.ACCOUNT_LOCKED, { userId: 'admin-1', req, metadata: { email } })
+      audit(A.ACCOUNT_LOCKED, { userId: 'admin-1', req })
       return res.status(423).json({
         error: `Account temporarily locked. Try again in ${minutes} minute(s).`,
         retryAfterMs,
       })
     }
 
-    // 2. Email check (constant-time via bcrypt compare later prevents timing oracle)
-    const expectedEmail = process.env.ADMIN_EMAIL ?? 'admin@atscorps.com'
-    if (email !== expectedEmail) {
-      const { lockedNow, attemptsLeft } = recordFailure(lockKey)
-      audit(A.LOGIN_FAILED, { req, metadata: { email, reason: 'wrong_email' } })
+    const recordAttemptFailure = () => recordFailure(acctKey)
+
+    // 2. Account-wide progressive delay. beginGlobalAttempt() atomically
+    // reserves this attempt's slot and returns the delay it owes, in one
+    // synchronous call with no `await` inside — required so two requests
+    // arriving close together (an attacker firing several in parallel,
+    // not one-at-a-time) can't both read the same stale, pre-increment
+    // count before either has recorded theirs. See lib/lockout.ts for the
+    // full race explanation. Capped and self-decaying — never an outright
+    // denial.
+    const throttleDelay = beginGlobalAttempt(GLOBAL_THROTTLE_KEY)
+    if (throttleDelay > 0) await sleep(throttleDelay)
+
+    // 3. Email check (constant-time via bcrypt compare later prevents timing oracle)
+    const expectedEmail = (process.env.ADMIN_EMAIL ?? 'admin@atscorps.com').trim().toLowerCase()
+    if (normalizedEmail !== expectedEmail) {
+      const { lockedNow, attemptsLeft } = recordAttemptFailure()
+      audit(A.LOGIN_FAILED, { req, metadata: { reason: 'wrong_email' } })
       if (lockedNow) {
         return res.status(423).json({ error: 'Account temporarily locked after too many failed attempts.' })
       }
       return res.status(401).json({ error: 'Invalid credentials', attemptsLeft })
     }
 
-    // 3. Password check
+    // 4. Password check
     try {
       const hash  = await getAdminHash()
       const valid = await bcrypt.compare(password, hash)
 
       if (!valid) {
-        const { lockedNow, attemptsLeft } = recordFailure(lockKey)
+        const { lockedNow, attemptsLeft } = recordAttemptFailure()
         audit(A.LOGIN_FAILED, { userId: 'admin-1', req, metadata: { reason: 'wrong_password' } })
         if (lockedNow) {
           audit(A.ACCOUNT_LOCKED, { userId: 'admin-1', req })
@@ -99,8 +163,12 @@ router.post(
         return res.status(401).json({ error: 'Invalid credentials', attemptsLeft })
       }
 
-      // 4. Success
-      recordSuccess(lockKey)
+      // 5. Success — clear this (account, IP) pair's lockout state AND the
+      // account-wide throttle. A genuine admin login is conclusive proof
+      // the account is back under its owner's control; there is no reason
+      // to keep slowing down the next login after that.
+      recordSuccess(acctKey)
+      clearGlobalThrottle(GLOBAL_THROTTLE_KEY)
       const accessToken = signAccessToken({ id: 'admin-1', role: 'admin' })
       await issueRefreshToken(res, 'admin-1', 'admin')
       audit(A.LOGIN_SUCCESS, { userId: 'admin-1', req })
@@ -130,9 +198,17 @@ router.post('/refresh', async (req: Request, res: Response) => {
     audit(A.REFRESH_TOKEN_ROTATED, { userId, req })
     return res.json({ accessToken })
   } catch (e: any) {
+    // rotateRefreshToken only ever throws its own deliberately-worded,
+    // pre-authentication errors (each carrying an explicit `.status`) — a
+    // genuine DB/driver failure has no `.status` and must never be echoed
+    // back verbatim here.
+    const status: number = (e as any).status
+    if (!status) {
+      console.error('[auth/refresh]', e)
+      return res.status(401).json({ error: 'Session expired' })
+    }
     const isReuse = /reuse/i.test(e.message ?? '')
     if (isReuse) audit(A.TOKEN_REUSE_DETECTED, { req })
-    const status: number = (e as any).status ?? 401
     return res.status(status).json({ error: e.message || 'Session expired' })
   }
 })
@@ -145,49 +221,8 @@ router.post('/logout', async (req: Request, res: Response) => {
   return res.json({ success: true })
 })
 
-/* ── POST /api/auth/dev-bypass ──────────────────────────────────────────
-   Developer-only shortcut: creates/finds a test candidate and issues full
-   JWT tokens without requiring OTP or payment.
-   BLOCKED entirely when DEV_BYPASS != 'true' or NODE_ENV == 'production'.
-   Remove this endpoint (and DEV_BYPASS from .env) before going live.
-   ───────────────────────────────────────────────────────────────────── */
-router.post('/dev-bypass', async (req: Request, res: Response) => {
-  const { DEV_BYPASS, NODE_ENV } = env()
-
-  if (DEV_BYPASS !== 'true' || NODE_ENV === 'production') {
-    return res.status(403).json({ error: 'Dev bypass is not enabled on this server.' })
-  }
-
-  try {
-    // Upsert a fixed dev-test candidate so the session has a real DB row
-    const result = await pool.query(
-      `INSERT INTO candidates (
-         full_name, mobile, force, rank, unit, retirement_date,
-         post, loc1, application_fee, payment_status
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (mobile) DO UPDATE SET
-         payment_status = 'dev_bypass',
-         updated_at     = NOW()
-       RETURNING *`,
-      [
-        'Dev Tester', '9000000000', 'Army', 'Colonel',
-        'Dev Unit', '2020-01-01', 'Security Guard', 'Upper Assam', 0, 'dev_bypass',
-      ],
-    )
-
-    const c           = result.rows[0]
-    const accessToken = signAccessToken({ id: String(c.id), role: 'candidate' })
-    await issueRefreshToken(res, String(c.id), 'candidate')
-
-    return res.json({
-      accessToken,
-      candidate: c,
-      _devBypass: true,
-    })
-  } catch (e: any) {
-    console.error('[auth/dev-bypass]', e)
-    return res.status(500).json({ error: 'Dev bypass failed', detail: e.message })
-  }
-})
+// The /dev-bypass route used to live here, reachable in every environment
+// behind only a runtime check. It now lives in ./devBypass.ts, registered
+// in index.ts ONLY when NODE_ENV !== 'production' — see that file for why.
 
 export default router

@@ -26,7 +26,7 @@ router.post('/', requireAuth('candidate'), async (req: Request, res: Response) =
     return res.status(201).json({ success: true, application: result.rows[0] })
   } catch (e: any) {
     console.error('[Apply]', e)
-    return res.status(500).json({ error: 'Failed to apply', detail: e.message })
+    return res.status(500).json({ error: 'Failed to apply' })
   }
 })
 
@@ -49,7 +49,8 @@ router.get('/candidate/:candidateId', requireAuth('candidate', 'admin'), async (
     )
     return res.json(result.rows)
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[applications/candidate]', e)
+    return res.status(500).json({ error: 'Failed to load applications' })
   }
 })
 
@@ -74,7 +75,8 @@ router.get('/job/:jobId', requireAuth('employer', 'admin'), async (req: Request,
     )
     return res.json(result.rows)
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[applications/job]', e)
+    return res.status(500).json({ error: 'Failed to load applications' })
   }
 })
 
@@ -97,25 +99,61 @@ router.get('/employer/:employerId', requireAuth('employer', 'admin'), async (req
     )
     return res.json(result.rows)
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[applications/employer]', e)
+    return res.status(500).json({ error: 'Failed to load applications' })
   }
 })
 
-/* ── PATCH /:id/status ── (employer or admin) ────────────────────────── */
+/* ── PATCH /:id/status ── (employer-owner or admin) ─────────────────── */
+/*
+ * requireAuth('employer', 'admin') proves WHO is asking, not WHAT they're
+ * allowed to touch — a plain `WHERE id=$1` let any authenticated employer
+ * change the status of an application against ANY job, including one
+ * posted by a different company entirely. For the employer role, the
+ * ownership check and the mutation now happen in the same UPDATE statement
+ * (via the EXISTS subquery against jobs), rather than a separate "SELECT to
+ * check ownership, then UPDATE" — so there's no window between the two
+ * where the row could matter differently than when it was checked. Admins
+ * keep the unrestricted path, matching existing admin permissions elsewhere
+ * in this codebase.
+ */
 router.patch('/:id/status', requireAuth('employer', 'admin'), async (req: Request, res: Response) => {
   try {
     const { status } = req.body
     const allowed = ['applied', 'under-review', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
     if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' })
 
-    const result = await pool.query(
-      'UPDATE applications SET status=$2, updated_at=NOW() WHERE id=$1 RETURNING *',
-      [req.params.id, status],
-    )
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' })
+    const auth          = req.auth!
+    const applicationId = req.params.id
+
+    const result = auth.role === 'admin'
+      ? await pool.query(
+          'UPDATE applications SET status=$2, updated_at=NOW() WHERE id=$1 RETURNING *',
+          [applicationId, status],
+        )
+      : await pool.query(
+          `UPDATE applications a
+              SET status = $2, updated_at = NOW()
+            WHERE a.id = $1
+              AND EXISTS (
+                SELECT 1 FROM jobs j WHERE j.id = a.job_id AND j.employer_id = $3
+              )
+            RETURNING a.*`,
+          [applicationId, status, Number(auth.id)],
+        )
+
+    if (result.rows.length === 0) {
+      // Zero rows means either "doesn't exist" or "exists but isn't yours" —
+      // distinguished only to pick 404 vs 403, never by revealing anything
+      // about the application itself (owner, candidate, current status).
+      const exists = await pool.query('SELECT 1 FROM applications WHERE id=$1', [applicationId])
+      if (exists.rows.length === 0) return res.status(404).json({ error: 'Not found' })
+      return res.status(403).json({ error: 'Access denied' })
+    }
     return res.json({ success: true, application: result.rows[0] })
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[applications/status]', e)
+    return res.status(500).json({ error: 'Failed to update application status' })
   }
 })
 

@@ -6,6 +6,11 @@ declare global {
   namespace Express {
     interface Request {
       auth?: TokenPayload
+      /** The exact raw request-body bytes, stashed by index.ts's json()
+       * `verify` hook — needed wherever a signature must be checked against
+       * the untouched body rather than the parsed-then-re-serialized object
+       * (the Razorpay webhook route, payments.ts). */
+      rawBody?: Buffer
     }
   }
 }

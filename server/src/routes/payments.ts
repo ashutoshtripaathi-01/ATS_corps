@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
-import { getRazorpay, verifySignature } from '../lib/razorpay'
+import { getRazorpay, verifySignature, verifyWebhookSignature } from '../lib/razorpay'
 import { env } from '../lib/env'
 import { pool } from '../db'
 import { requireAuth } from '../middleware/auth'
@@ -8,12 +8,9 @@ import { signAccessToken, issueRefreshToken } from '../lib/tokens'
 import { body } from '../lib/validate'
 import { audit, A } from '../lib/audit'
 import { logActivity, setApplicationStatus, touchActivity, E } from '../lib/activity'
-import { S, PAID_STATUSES, paymentsEnabled } from '../lib/applicationStatus'
+import { S, PAID_STATUSES, paymentsEnabled, REGISTRATION_FEE_PAISE } from '../lib/applicationStatus'
 
 const router = Router()
-
-// ₹5,000 registration fee (500000 paise) — only charged while payments are on
-const REGISTRATION_FEE_PAISE = 500000
 
 /*
  * Registration is currently free. Rather than deleting the Razorpay
@@ -76,7 +73,7 @@ router.post('/create-order', requireAuth('candidate'), async (req: Request, res:
     return res.json({ orderId: order.id, amount: REGISTRATION_FEE_PAISE, currency: 'INR' })
   } catch (e: any) {
     console.error('[payments/create-order]', e)
-    return res.status(500).json({ error: 'Failed to create payment order', detail: e.message })
+    return res.status(500).json({ error: 'Failed to create payment order' })
   }
 })
 
@@ -236,7 +233,142 @@ router.post('/verify', requireAuth('candidate'), body(verifySchema), async (req:
   } catch (e: any) {
     await client.query('ROLLBACK').catch(() => {})
     console.error('[payments/verify]', e)
-    return res.status(500).json({ error: 'Failed to verify payment', detail: e.message })
+    return res.status(500).json({ error: 'Failed to verify payment' })
+  } finally {
+    client.release()
+  }
+})
+
+/* ── POST /api/payments/webhook ── Razorpay server-to-server callback ──
+ *
+ * /verify above depends on the browser completing a round trip after
+ * Razorpay confirms payment — if the connection drops or the tab closes
+ * between Razorpay's success and that call reaching us, a genuinely
+ * successful payment is never recorded. This route is the safety net:
+ * Razorpay calls it directly, independent of the browser, whenever a
+ * payment it holds actually captures.
+ *
+ * No requireAuth() here — Razorpay has no session with this app. Trust
+ * comes entirely from the HMAC signature, verified against the RAW request
+ * body (see index.ts's `verify` hook) using RAZORPAY_WEBHOOK_SECRET, a
+ * secret distinct from RAZORPAY_KEY_SECRET and configured independently in
+ * the Razorpay dashboard. Everything else about this handler — which
+ * candidate it applies to, what amount was actually ordered — is resolved
+ * from this app's own payment_attempts row for the order, never from a
+ * claim inside the webhook payload itself.
+ */
+router.post('/webhook', async (req: Request, res: Response) => {
+  const signature = req.headers['x-razorpay-signature']
+  if (typeof signature !== 'string' || !req.rawBody) {
+    return res.status(400).json({ error: 'Missing signature or body' })
+  }
+  if (!verifyWebhookSignature(req.rawBody, signature)) {
+    console.warn('[payments/webhook] invalid signature')
+    return res.status(400).json({ error: 'Invalid signature' })
+  }
+
+  let payload: any
+  try {
+    payload = JSON.parse(req.rawBody.toString('utf8'))
+  } catch {
+    return res.status(400).json({ error: 'Malformed payload' })
+  }
+
+  // Only the event that means money actually moved advances anything.
+  // Everything else is acknowledged (so Razorpay stops retrying) but
+  // otherwise ignored.
+  if (payload?.event !== 'payment.captured') {
+    return res.json({ received: true })
+  }
+
+  const entity    = payload?.payload?.payment?.entity
+  const orderId   = entity?.order_id as string | undefined
+  const paymentId = entity?.id as string | undefined
+  const amount    = entity?.amount
+  const currency  = entity?.currency
+
+  if (!orderId || !paymentId) {
+    return res.status(400).json({ error: 'Missing order/payment id in payload' })
+  }
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    const attempt = await client.query(
+      `SELECT candidate_id, status, amount, currency FROM payment_attempts
+        WHERE razorpay_order_id = $1 FOR UPDATE`,
+      [orderId],
+    )
+    if (attempt.rows.length === 0) {
+      // Not an order this app created — acknowledge so Razorpay stops
+      // retrying, but there is nothing here to mark as paid.
+      await client.query('ROLLBACK')
+      console.warn('[payments/webhook] unknown order', orderId)
+      return res.json({ received: true })
+    }
+
+    const row          = attempt.rows[0]
+    const candidateId  = row.candidate_id as number
+
+    // The amount/currency Razorpay reports must match what THIS app asked
+    // it to charge at order-creation time — never trust the webhook's own
+    // claim over the prior server-side record.
+    if (Number(amount) !== Number(row.amount) || String(currency) !== String(row.currency)) {
+      await client.query('ROLLBACK')
+      console.error('[payments/webhook] amount/currency mismatch for order', orderId)
+      audit(A.LOGIN_FAILED, { req, metadata: { reason: 'webhook_amount_mismatch', orderId } })
+      return res.status(400).json({ error: 'Amount mismatch' })
+    }
+
+    // Idempotent by construction — this only ever transitions a row OUT of
+    // 'pending'. A duplicate delivery of the same event, or an event that
+    // arrives after /verify already marked this order 'paid', matches
+    // nothing here and changes nothing.
+    if (row.status === 'pending') {
+      await client.query(
+        `UPDATE payment_attempts SET
+           razorpay_payment_id = $1, status = 'paid', paid_at = COALESCE(paid_at, NOW())
+         WHERE razorpay_order_id = $2 AND status = 'pending'`,
+        [paymentId, orderId],
+      )
+    }
+
+    const cur = await client.query(
+      'SELECT application_status FROM candidates WHERE id = $1 FOR UPDATE',
+      [candidateId],
+    )
+    const before      = cur.rows[0]?.application_status as string | null
+    const alreadyPaid = !!before && PAID_STATUSES.includes(before as any)
+
+    if (!alreadyPaid) {
+      await client.query(
+        `UPDATE candidates SET payment_status = 'paid', last_activity_at = NOW(), updated_at = NOW()
+          WHERE id = $1`,
+        [candidateId],
+      )
+      await setApplicationStatus(candidateId, S.PAYMENT_SUCCESSFUL, {
+        client, actorType: 'system',
+        description: 'Payment confirmed via webhook',
+      })
+      await setApplicationStatus(candidateId, S.DOCUMENTS_PENDING, {
+        client, actorType: 'system',
+        description: 'Documents unlocked',
+      })
+      logActivity(candidateId, E.PAYMENT_SUCCESSFUL, {
+        description: 'Payment received and verified via webhook',
+        actorType: 'system',
+        metadata: { orderId, paymentId },
+        client,
+      })
+    }
+
+    await client.query('COMMIT')
+    return res.json({ received: true })
+  } catch (e: any) {
+    await client.query('ROLLBACK').catch(() => {})
+    console.error('[payments/webhook]', e?.message ?? e)
+    return res.status(500).json({ error: 'Webhook processing failed' })
   } finally {
     client.release()
   }

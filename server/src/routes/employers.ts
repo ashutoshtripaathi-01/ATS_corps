@@ -58,7 +58,7 @@ router.post('/create-account', authLimiter, body(emailPasswordSchema), async (re
   } catch (e: any) {
     if (e.code === '23505') return res.status(409).json({ error: 'An employer account with this email already exists' })
     console.error('[Employer create-account]', e)
-    return res.status(500).json({ error: 'Account creation failed', detail: e.message })
+    return res.status(500).json({ error: 'Account creation failed' })
   }
 })
 
@@ -83,11 +83,27 @@ router.post('/login', authLimiter, body(emailPasswordSchema), async (req: Reques
     return res.json({ success: true, employer: emp, accessToken })
   } catch (e: any) {
     console.error('[Employer login]', e)
-    return res.status(500).json({ error: 'Login failed', detail: e.message })
+    return res.status(500).json({ error: 'Login failed' })
   }
 })
 
 /* ── POST /register ─────────────────────────────────────────────────── */
+/*
+ * INSERT-only. This endpoint is unauthenticated by design — any new company
+ * needs to be able to register without an account yet — which previously
+ * made an `ON CONFLICT (gst) DO UPDATE` a full account-takeover primitive:
+ * GST numbers are not secret (they're printed on invoices and listed on
+ * India's public GST-verification portal), so anyone who knew an existing
+ * employer's GST could silently overwrite its email and, by supplying a
+ * password, its password hash too — walking away with a valid session for
+ * someone else's account.
+ *
+ * `ON CONFLICT (gst) DO NOTHING` makes a GST collision a true no-op: zero
+ * rows come back, nothing about the existing row is read or written, and
+ * the request is rejected before any token is ever issued. A later
+ * genuine profile edit still goes through the authenticated, ownership-
+ * checked PATCH /:id below — this route only ever creates.
+ */
 router.post('/register', body(registerSchema), async (req: Request, res: Response) => {
   const { companyName, gst: gstNo, pan: panNo, email: emailAddr, password, mobile, state, district, address, pincode: pin } =
     req.body as z.infer<typeof registerSchema>
@@ -98,20 +114,15 @@ router.post('/register', body(registerSchema), async (req: Request, res: Respons
     const result = await pool.query(
       `INSERT INTO employers (company_name, gst, pan, email, password_hash, mobile, state, district, address, pincode)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (gst) DO UPDATE SET
-         company_name  = EXCLUDED.company_name,
-         pan           = EXCLUDED.pan,
-         email         = EXCLUDED.email,
-         password_hash = COALESCE(EXCLUDED.password_hash, employers.password_hash),
-         mobile        = EXCLUDED.mobile,
-         state         = EXCLUDED.state,
-         district      = EXCLUDED.district,
-         address       = EXCLUDED.address,
-         pincode       = EXCLUDED.pincode,
-         updated_at    = NOW()
+       ON CONFLICT (gst) DO NOTHING
        RETURNING *`,
       [companyName, gstNo, panNo, emailAddr, passwordHash, mobile ?? null, state, district, address, pin],
     )
+
+    if (result.rows.length === 0) {
+      // GST already belongs to someone — existing row untouched, no session issued.
+      return res.status(409).json({ error: 'This GST number is already registered' })
+    }
 
     const emp         = result.rows[0]
     const accessToken = signAccessToken({ id: String(emp.id), role: 'employer' })
@@ -120,9 +131,16 @@ router.post('/register', body(registerSchema), async (req: Request, res: Respons
 
     return res.status(201).json({ success: true, employer: emp, accessToken })
   } catch (e: any) {
-    if (e.code === '23505') return res.status(409).json({ error: 'A company with this email is already registered' })
+    // The GST path above never throws 23505 any more (ON CONFLICT DO NOTHING
+    // absorbs it) — a unique-constraint violation reaching here means some
+    // OTHER unique column collided (currently: email). Checked by constraint
+    // name rather than assumed, so an unrelated DB error is never mislabelled
+    // as "already registered".
+    if (e.code === '23505' && String(e.constraint ?? '').includes('email')) {
+      return res.status(409).json({ error: 'A company with this email is already registered' })
+    }
     console.error('[Employer register]', e)
-    return res.status(500).json({ error: 'Registration failed', detail: e.message })
+    return res.status(500).json({ error: 'Registration failed' })
   }
 })
 
@@ -138,7 +156,8 @@ router.get('/admin/all', requireAuth('admin'), async (_req: Request, res: Respon
     )
     return res.json(result.rows)
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    console.error('[employers/admin-all]', e)
+    return res.status(500).json({ error: 'Failed to load employers' })
   }
 })
 
@@ -179,7 +198,11 @@ router.patch('/:id', requireAuth('employer', 'admin'), async (req: Request, res:
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' })
     return res.json({ success: true, employer: result.rows[0] })
   } catch (e: any) {
-    return res.status(500).json({ error: e.message })
+    if (e.code === '23505' && String(e.constraint ?? '').includes('email')) {
+      return res.status(409).json({ error: 'Another account already uses this email' })
+    }
+    console.error('[employers/patch]', e)
+    return res.status(500).json({ error: 'Failed to update employer' })
   }
 })
 
